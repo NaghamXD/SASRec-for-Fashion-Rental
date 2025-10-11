@@ -75,7 +75,7 @@ I see a dozen of citations of the repo🫰, pls use the bib as below if needed.
 ```
 @software{Huang_SASRec_pytorch,
 author = {Huang, Zan},
-title = {SASRec.pytorch: PyTorch implementation for Self-Attentive Sequential Recommendation},
+title = {SASRec.pytorch},
 url = {https://github.com/pmixer/SASRec.pytorch},
 year={2020}
 }
