@@ -1,10 +1,14 @@
 import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
+
 import time
 import torch
 import argparse
 
 from model import SASRec
 from utils import *
+
+
 
 def str2bool(s):
     if s not in {'false', 'true'}:
