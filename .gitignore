@@ -1,3 +1,33 @@
+# --- OS & Environment ---
 .DS_Store
+.vscode/
+.idea/
 __pycache__/
-*_default/
+*.pyc
+.env
+.venv/
+env/
+
+# --- Large Data Files (Input) ---
+# Ignore all CSVs so you don't accidentally push private data
+*.csv
+# If you specifically want to track the benchmark results, you can comment the next line out:
+benchmark_results.csv
+
+# --- Generated Data (Output of preprocess.py) ---
+data/
+*.txt
+*.pkl
+*.npy
+
+# --- Model Checkpoints & Logs ---
+# These folders contain the trained models (huge files)
+default/
+item_model/
+group_model/
+*.pth
+runs/
+docs/
+
+# --- Other Temporary Files ---
+*.log
