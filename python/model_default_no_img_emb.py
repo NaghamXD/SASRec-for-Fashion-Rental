@@ -34,53 +34,6 @@ class SASRec(torch.nn.Module):
         # TODO: loss += args.l2_emb for regularizing embedding vectors during training
         # https://stackoverflow.com/questions/42704283/adding-l1-l2-regularization-in-pytorch
         self.item_emb = torch.nn.Embedding(self.item_num+1, args.hidden_units, padding_idx=0)
-        # --- NEW CODE: VISUAL PROJECTION ---
-        # 1. Define a "Shrink" layer: 1280 -> 50
-        self.visual_dim = 1280
-        self.dim_reduction_layer = torch.nn.Linear(self.visual_dim, args.hidden_units)
-        
-        # 2. Load the 1280-dim vectors as a FIXED lookup table
-        # We use a separate embedding layer just to hold the data
-        self.visual_features = torch.nn.Embedding(self.item_num+1, self.visual_dim, padding_idx=0)
-        
-        # Load the weights
-        try:
-            weights = np.load('data/pretrained_item_emb_1280.npy') 
-            self.visual_features.weight.data.copy_(torch.from_numpy(weights))
-            
-            # Freeze them! We trust EfficientNet; we only train the "Shrink" layer.
-            self.visual_features.weight.requires_grad = False 
-            print("Loaded and frozen 1280-dim image features.")
-        except Exception as e:
-            print(f"Could not load visual features: {e}")
-        # -----------------------------------
-
-        # =================================================
-        # FEATURE 2: TAGS (Multi-Hot -> Linear)
-        # =================================================
-        try:
-            # 1. Load Data
-            tag_matrix = np.load('data/pretrained_tag_emb.npy')
-            self.num_unique_tags = tag_matrix.shape[1]
-            
-            # 2. Define Projection Layer (e.g., 512 tags -> 50 hidden units)
-            # This is the "Learnable" part that weights the tags
-            self.tag_reduction = torch.nn.Linear(self.num_unique_tags, args.hidden_units)
-            
-            # 3. Store Matrix (Fixed buffer, not trainable embedding)
-            # We use a buffer so it saves with the model state but doesn't update via gradient descent
-            # We wrap it in an Embedding bag or just a raw tensor lookup
-            # Since it's multi-hot (features), a raw lookup is easiest.
-            self.tag_features = torch.nn.Embedding.from_pretrained(
-                torch.from_numpy(tag_matrix), 
-                freeze=True
-            )
-            print(f"Loaded {self.num_unique_tags} unique tags.")
-            
-        except Exception as e:
-            print(f"Skipping Tags: {e}")
-            self.tag_features = None
-
         self.pos_emb = torch.nn.Embedding(args.maxlen+1, args.hidden_units, padding_idx=0)
         self.emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
 
@@ -110,38 +63,8 @@ class SASRec(torch.nn.Module):
             # self.neg_sigmoid = torch.nn.Sigmoid()
 
     def log2feats(self, log_seqs): # TODO: fp64 and int64 as default in python, trim?
-        # 1. Base ID
-        ids = torch.LongTensor(log_seqs).to(self.dev)
-        seqs = self.item_emb(ids)
+        seqs = self.item_emb(torch.LongTensor(log_seqs).to(self.dev))
         seqs *= self.item_emb.embedding_dim ** 0.5
-
-        # --- NEW CODE: VISUAL PROJECTION ---
-        
-        # 2. Get Visual Embeddings (The "Content" part)
-        # Look up the 1280 vectors
-        visuals = self.visual_features(ids)
-        
-        # 3. Project Visuals: 1280 -> 50
-        # The Magnitude Fix:
-        visuals_projected = torch.tanh(self.dim_reduction_layer(visuals))
-
-        # 4. Combine!
-        # Option A: Addition (Most common) -> Input = ID + Image
-        seqs = seqs + visuals_projected
-
-        # 3. Add Tags (New Code)
-        if self.tag_features is not None:
-            # Get the Multi-Hot vector (Batch x Seq x NumTags)
-            tag_vectors = self.tag_features(ids)
-            
-            # Project down (Batch x Seq x Hidden)
-            tag_projected = self.tag_reduction(tag_vectors)
-            
-            # Add to sequence with tanh for safety
-            seqs = seqs + torch.tanh(tag_projected)
-
-        #finished new code-----------------------------
-        
         poss = np.tile(np.arange(1, log_seqs.shape[1] + 1), [log_seqs.shape[0], 1])
         # TODO: directly do tensor = torch.arange(1, xxx, device='cuda') to save extra overheads
         poss *= (log_seqs != 0)

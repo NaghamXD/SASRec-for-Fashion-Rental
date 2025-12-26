@@ -34,7 +34,10 @@ def sample_function(user_train, usernum, itemnum, batch_size, maxlen, result_que
     def sample(uid):
 
         # uid = np.random.randint(1, usernum + 1)
-        while len(user_train[uid]) <= 1: uid = np.random.randint(1, usernum + 1)
+        #while len(user_train[uid]) <= 1: uid = np.random.randint(1, usernum + 1)
+        # FIX: Check if uid exists in user_train before checking length
+        while uid not in user_train or len(user_train[uid]) <= 1: 
+            uid = np.random.randint(1, usernum + 1)
 
         seq = np.zeros([maxlen], dtype=np.int32)
         pos = np.zeros([maxlen], dtype=np.int32)
@@ -139,8 +142,11 @@ def evaluate(model, dataset, args):
         users = range(1, usernum + 1)
     for u in users:
 
-        if len(train[u]) < 1 or len(test[u]) < 1: continue
-
+        #if len(train[u]) < 1 or len(test[u]) < 1: continue
+        # FIX: Check if user exists in dictionaries before checking length
+        if u not in train or u not in test or len(train[u]) < 1 or len(test[u]) < 1: 
+            continue
+        
         seq = np.zeros([args.maxlen], dtype=np.int32)
         idx = args.maxlen - 1
         seq[idx] = valid[u][0]
@@ -186,7 +192,10 @@ def evaluate_valid(model, dataset, args):
     else:
         users = range(1, usernum + 1)
     for u in users:
-        if len(train[u]) < 1 or len(valid[u]) < 1: continue
+        #if len(train[u]) < 1 or len(valid[u]) < 1: continue
+        # FIX: Check if user exists in dictionaries before checking length
+        if u not in train or u not in valid or len(train[u]) < 1 or len(valid[u]) < 1: 
+            continue
 
         seq = np.zeros([args.maxlen], dtype=np.int32)
         idx = args.maxlen - 1

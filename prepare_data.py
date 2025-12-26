@@ -64,18 +64,25 @@ def process_data():
     # MODE A: INDIVIDUAL ITEMS
     # =====================================================
     print("\n--- Processing ITEMS ---")
-    df_items = full_df.copy()
-    df_items = remove_consecutive_duplicates(df_items)
-    df_items = df_items.sort_values(by=['customer.id', 'rentalPeriod.start'])
     
-    # Maps
-    unique_users = df_items['customer.id'].unique()
-    unique_items = df_items['outfit.id'].unique()
+    # --- CHANGE: Build Map from MASTER LIST (outfits.csv), not history ---
+    unique_items = df_outfits['id'].unique()
+    # Note: Users still come from history because we don't have a 'users.csv' master list usually
+    unique_users = full_df['customer.id'].unique()
+    
     user_map = {u: i+1 for i, u in enumerate(unique_users)}
     item_map = {item: i+1 for i, item in enumerate(unique_items)}
     
+    print(f"Total Unique Items in Catalogue: {len(item_map)}")
+    print(f"Total Unique Users in History:   {len(user_map)}")
+    
     with open('data/item_maps.pkl', 'wb') as f:
         pickle.dump((user_map, item_map), f)
+    # ---------------------------------------------------------------------
+
+    df_items = full_df.copy()
+    df_items = remove_consecutive_duplicates(df_items)
+    df_items = df_items.sort_values(by=['customer.id', 'rentalPeriod.start'])
 
     train_file_lines = []
     test_data = {} 
