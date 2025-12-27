@@ -25,7 +25,7 @@ def process_images_from_folder():
 
     print("--- Step 1: Loading Mappings ---")
     if not os.path.exists(MAP_PATH):
-        print(f"Error: {MAP_PATH} not found. Run prepare_data_for_paper.py first.")
+        print(f"Error: {MAP_PATH} not found. Run prepare_data.py first.")
         return
 
     with open(MAP_PATH, 'rb') as f:
@@ -135,10 +135,23 @@ def process_images_from_folder():
     print(f"Successfully loaded images: {success_count}")
     print(f"Missing images (zeros): {missing_count}")
     
+    # I added also filling missing embeddings with the mean of existing ones
+    final_matrix = emb_matrix.copy()
+    # Calculate the mean of only the rows we successfully filled (skip index 0 and zeros)
+    mask = np.any(final_matrix != 0, axis=1)
+    mean_vec = final_matrix[mask].mean(axis=0)
+
+    # Fill the missing items (where the row is all zeros) with the mean
+    missing_mask = ~mask
+    # Don't fill index 0 (padding)
+    missing_mask[0] = False 
+    final_matrix[missing_mask] = mean_vec
+
+    np.save(OUTPUT_PATH, final_matrix)
     # Save
-    np.save(OUTPUT_PATH, emb_matrix)
+    #np.save(OUTPUT_PATH, emb_matrix)
     print(f"Saved matrix to: {OUTPUT_PATH}")
-    print(f"Matrix Shape: {emb_matrix.shape}")
+    print(f"Matrix Shape: {final_matrix.shape}")
 
 if __name__ == "__main__":
     process_images_from_folder()

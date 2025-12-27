@@ -47,15 +47,6 @@ if __name__ == '__main__':
     dataset = data_partition(args.dataset)
 
     [user_train, user_valid, user_test, usernum, itemnum] = dataset
-    # NEW: Force itemnum to match the catalog map size
-    import pickle
-    map_file = 'data/group_maps.pkl' if 'group' in args.dataset else 'data/item_maps.pkl'
-    with open(map_file, 'rb') as f:
-        maps = pickle.load(f)
-        itemnum = len(maps[1]) # Always use the full catalog size
-    
-    print(f'Total Catalog Items: {itemnum}')
-    
     # num_batch = len(user_train) // args.batch_size # tail? + ((len(user_train) % args.batch_size) != 0)
     num_batch = (len(user_train) - 1) // args.batch_size + 1
     cc = 0.0
@@ -104,20 +95,7 @@ if __name__ == '__main__':
     # ce_criterion = torch.nn.CrossEntropyLoss()
     # https://github.com/NVIDIA/pix2pixHD/issues/9 how could an old bug appear again...
     bce_criterion = torch.nn.BCEWithLogitsLoss() # torch.nn.BCELoss()
-    #adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.98))
-    #I commented the previous line out and added the followings.
-    # Separate the alpha parameters from the rest of the model weights
-    alpha_params = [model.alpha_visual, model.alpha_tags]
-    alpha_params_ids = list(map(id, alpha_params))
-    base_params = [p for p in model.parameters() if id(p) not in alpha_params_ids]
-
-    # Define the optimizer with two different learning rates
-    # We give Alphas a higher LR (e.g., 0.01) so they can react faster 
-    # while the rest of the model learns at the standard rate (0.001)
-    adam_optimizer = torch.optim.Adam([
-        {'params': base_params},
-        {'params': alpha_params, 'lr': 0.01} 
-    ], lr=args.lr, betas=(0.9, 0.98))
+    adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.98))
 
     best_val_ndcg, best_val_hr = 0.0, 0.0
     best_test_ndcg, best_test_hr = 0.0, 0.0
@@ -144,9 +122,6 @@ if __name__ == '__main__':
 
         if epoch % 20 == 0:
             model.eval()
-            # ----------------------------
-            print(f"\n[Feature Importance] Alpha Visual: {model.alpha_visual.item():.4f}, Alpha Tags: {model.alpha_tags.item():.4f}")
-            # ----------------------------
             t1 = time.time() - t0
             T += t1
             print('Evaluating', end='')

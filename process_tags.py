@@ -12,7 +12,7 @@ def process_tags():
 
     print("Loading data...")
     if not os.path.exists(MAP_PATH):
-        print("Error: Map file not found. Run prepare_data_for_paper.py first.")
+        print("Error: Map file not found. Run prepare_data.py first.")
         return
 
     # Load Item Map

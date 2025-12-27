@@ -53,22 +53,14 @@ class AvailabilityMask:
 def evaluate_model(model_path, dataset_name, test_pkl_path):
     print(f"\nEvaluating {dataset_name}...")
     
-    # 1. Load Maps (DYNAMIC: Load correct map based on dataset)
-    # We use the map length to define the True Model Size
-    if 'group' in dataset_name:
-        map_path = 'data/group_maps.pkl'
-        print("--> Loading GROUP Maps...")
-    else:
-        map_path = 'data/item_maps.pkl'
-        print("--> Loading ITEM Maps...")
-        
-    with open(map_path, 'rb') as f:
+    # 1. Load Maps & Data
+    with open('data/item_maps.pkl', 'rb') as f:
+        # Depending on how you saved them, this might load user/item or user/group maps
+        # For groups, we might need 'data/group_maps.pkl' if the IDs differ.
+        # But usually user_map is consistent.
         maps = pickle.load(f)
-        # map is usually (user_map, item_map)
         user_map = maps[0]
-        # This is the crucial fix: Trust the map for the total count
-        item_map = maps[1] 
-        true_item_count = len(item_map)
+        item_map = maps[1]
         
     with open(test_pkl_path, 'rb') as f:
         data = pickle.load(f)
@@ -79,13 +71,12 @@ def evaluate_model(model_path, dataset_name, test_pkl_path):
 
     # Load Training Sequences
     train_seqs = {}
-    # Initialize with the TRUE count from the map, not 0
-    user_num = len(user_map) 
-    item_num = true_item_count 
-    
+    user_num, item_num = 0, 0
     with open(f'data/{dataset_name}.txt', 'r') as f:
         for line in f:
             u, i = map(int, line.split())
+            user_num = max(user_num, u)
+            item_num = max(item_num, i)
             if u not in train_seqs: train_seqs[u] = []
             train_seqs[u].append(i)
             
@@ -111,9 +102,6 @@ def evaluate_model(model_path, dataset_name, test_pkl_path):
             self.dropout_rate = 0.2
             self.device = 'mps'
             self.norm_first = False
-            # --- Added this line to match the new model with dataset name ---
-            self.dataset = dataset_name 
-            # -------------------------
 
     args = Args()
     model = SASRec(args.usernum, args.itemnum, args).to(args.device)
@@ -262,8 +250,7 @@ if __name__ == "__main__":
         files = os.listdir('clothing_items_train_item_model')
         pth_files = [f for f in files if f.endswith('.pth')]
         if pth_files:
-            # This sorts by the actual integer number after "epoch="
-            latest = max(pth_files, key=lambda x: int(x.split('epoch=')[1].split('.')[0]))
+            latest = sorted(pth_files)[-1]
             evaluate_model(f'clothing_items_train_item_model/{latest}', 'clothing_items_train', 'data/test_data_items.pkl')
             
     # Groups
@@ -271,6 +258,5 @@ if __name__ == "__main__":
         files = os.listdir('clothing_groups_train_group_model')
         pth_files = [f for f in files if f.endswith('.pth')]
         if pth_files:
-            # This sorts by the actual integer number after "epoch="
-            latest = max(pth_files, key=lambda x: int(x.split('epoch=')[1].split('.')[0]))
+            latest = sorted(pth_files)[-1]
             evaluate_model(f'clothing_groups_train_group_model/{latest}', 'clothing_groups_train', 'data/test_data_groups.pkl')
