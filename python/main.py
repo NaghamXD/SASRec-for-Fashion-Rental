@@ -118,7 +118,10 @@ if __name__ == '__main__':
         {'params': base_params},
         {'params': alpha_params, 'lr': 0.01} 
     ], lr=args.lr, betas=(0.9, 0.98))
-
+    # --- Early Stopping Setup ---
+    patience = 5  # Number of evaluations to wait before stopping
+    patience_counter = 0 
+    # ----------------------------
     best_val_ndcg, best_val_hr = 0.0, 0.0
     best_test_ndcg, best_test_hr = 0.0, 0.0
     T = 0.0
@@ -144,9 +147,12 @@ if __name__ == '__main__':
 
         if epoch % 20 == 0:
             model.eval()
-            # ----------------------------
-            print(f"\n[Feature Importance] Alpha Visual: {model.alpha_visual.item():.4f}, Alpha Tags: {model.alpha_tags.item():.4f}")
-            # ----------------------------
+            # Extract current Alpha values
+            curr_alpha_v = model.alpha_visual.item()
+            curr_alpha_t = model.alpha_tags.item()
+
+            print(f"\n[Feature Importance] Alpha Visual: {curr_alpha_v:.4f}, Alpha Tags: {curr_alpha_t:.4f}")
+            
             t1 = time.time() - t0
             T += t1
             print('Evaluating', end='')
@@ -154,22 +160,38 @@ if __name__ == '__main__':
             t_valid = evaluate_valid(model, dataset, args)
             print('epoch:%d, time: %f(s), valid (NDCG@10: %.4f, HR@10: %.4f), test (NDCG@10: %.4f, HR@10: %.4f)'
                     % (epoch, T, t_valid[0], t_valid[1], t_test[0], t_test[1]))
+            # --- UPDATED LOGGING LINE ---
+            # Added alpha values to the end of each log entry
+            log_line = f"{epoch} {t_valid} {t_test} alpha_v:{curr_alpha_v:.4f} alpha_t:{curr_alpha_t:.4f}\n"
+            f.write(log_line)
+            f.flush()
+            # ----------------------------
 
             if t_valid[0] > best_val_ndcg or t_valid[1] > best_val_hr or t_test[0] > best_test_ndcg or t_test[1] > best_test_hr:
                 best_val_ndcg = max(t_valid[0], best_val_ndcg)
                 best_val_hr = max(t_valid[1], best_val_hr)
                 best_test_ndcg = max(t_test[0], best_test_ndcg)
                 best_test_hr = max(t_test[1], best_test_hr)
+                # RESET counter because we found a better model
+                patience_counter = 0
+
                 folder = args.dataset + '_' + args.train_dir
                 fname = 'SASRec.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth'
                 fname = fname.format(epoch, args.lr, args.num_blocks, args.num_heads, args.hidden_units, args.maxlen)
                 torch.save(model.state_dict(), os.path.join(folder, fname))
+            else:
+                # INCREMENT counter because performance stalled/dropped
+                patience_counter += 1
+                print(f" --> No improvement. Patience: {patience_counter}/{patience}")
 
-            f.write(str(epoch) + ' ' + str(t_valid) + ' ' + str(t_test) + '\n')
-            f.flush()
             t0 = time.time()
             model.train()
     
+            # ACTIVATE STOPPING
+            if patience_counter >= patience:
+                print(f"\n[Early Stopping] Performance hasn't improved for {patience * 20} epochs. Stopping training.")
+                break
+        
         if epoch == args.num_epochs:
             folder = args.dataset + '_' + args.train_dir
             fname = 'SASRec.epoch={}.lr={}.layer={}.head={}.hidden={}.maxlen={}.pth'

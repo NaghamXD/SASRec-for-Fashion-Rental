@@ -2,6 +2,13 @@ import numpy as np
 import pandas as pd
 import pickle
 import os
+# 1. Define these outside so they are easy to change
+SPLIT = "data_70_30" # or "data_loo"
+# These should be used inside the function!
+ITEM_MAP_PATH = f'data/{SPLIT}/item_maps.pkl'
+GROUP_MAP_PATH = f'data/{SPLIT}/group_maps.pkl'
+ITEM_IMG_PATH = f'data/{SPLIT}/pretrained_item_emb_1280.npy'
+ITEM_TAG_PATH = f'data/{SPLIT}/pretrained_tag_emb.npy'
 
 def process_group_features():
     print("--- Generaring Group Embeddings ---")
@@ -27,15 +34,17 @@ def process_group_features():
 
     # 3. Load Existing ITEM Matrices
     try:
-        item_img_matrix = np.load('data/pretrained_item_emb_1280.npy')
+        item_img_matrix = np.load(ITEM_IMG_PATH)
         print(f"Loaded Item Images: {item_img_matrix.shape}")
-    except:
+    except FileNotFoundError:
+        print(f"Warning: Item images not found at {ITEM_IMG_PATH}")
         item_img_matrix = None
         
     try:
-        item_tag_matrix = np.load('data/pretrained_tag_emb.npy')
+        item_tag_matrix = np.load(ITEM_TAG_PATH)
         print(f"Loaded Item Tags: {item_tag_matrix.shape}")
-    except:
+    except FileNotFoundError:
+        print(f"Warning: Item tags not found at {ITEM_TAG_PATH}")
         item_tag_matrix = None
 
     # 4. Initialize GROUP Matrices
@@ -82,12 +91,14 @@ def process_group_features():
 
     # 6. Save
     if item_img_matrix is not None:
-        np.save('data/pretrained_group_emb_1280.npy', group_img_matrix)
-        print("Saved data/pretrained_group_emb_1280.npy")
+            save_path = f'data/{SPLIT}/pretrained_group_emb_1280.npy'
+            np.save(save_path, group_img_matrix)
+            print(f"Saved {save_path}")
         
     if item_tag_matrix is not None:
-        np.save('data/pretrained_group_tag_emb.npy', group_tag_matrix)
-        print("Saved data/pretrained_group_tag_emb.npy")
+        save_path = f'data/{SPLIT}/pretrained_group_tag_emb.npy'
+        np.save(save_path, group_tag_matrix)
+        print(f"Saved {save_path}")
 
 if __name__ == "__main__":
     process_group_features()

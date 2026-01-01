@@ -16,11 +16,10 @@ def process_images_from_folder():
     # The folder containing the 50.3k .npy files
     EMBEDDINGS_DIR = 'data/embeddings/EfficientNet_V2_L_final/' 
     
-    # Where to save the final matrix
-    OUTPUT_PATH = 'data/pretrained_item_emb_1280.npy'
-    
-    # The map file created by prepare_data_for_paper.py
-    MAP_PATH = 'data/item_maps.pkl'
+    # Change these lines in process_tags.py
+    SPLIT = "data_70_30" # or "data_loo"
+    MAP_PATH = f'data/{SPLIT}/item_maps.pkl'
+    OUTPUT_PATH = f'data/{SPLIT}/pretrained_tag_emb.npy'
     # ---------------------------------------------------------
 
     print("--- Step 1: Loading Mappings ---")

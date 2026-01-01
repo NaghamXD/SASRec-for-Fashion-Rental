@@ -48,6 +48,10 @@ def leave_percentage_out_split_with_dates(sequence, dates, percentage=0.3):
 # 2. MAIN PROCESSING
 # ---------------------------------------------------------
 def process_data():
+    if not os.path.exists('data'): 
+        os.makedirs('data')
+        print("Created 'data' directory")
+        
     print("Loading data...")
     df_orders = pd.read_csv('original_orders.csv', sep=';')
     df_triplets = pd.read_csv('user_activity_triplets.csv', sep=';')

@@ -7,8 +7,10 @@ from sklearn.preprocessing import MultiLabelBinarizer
 def process_tags():
     # 1. Config
     OUTFITS_CSV = 'outfits.csv'
-    MAP_PATH = 'data/item_maps.pkl'
-    OUTPUT_PATH = 'data/pretrained_tag_emb.npy'
+    # Change these lines in process_tags.py
+    SPLIT = "data_70_30" # or "data_loo"
+    MAP_PATH = f'data/{SPLIT}/item_maps.pkl'
+    OUTPUT_PATH = f'data/{SPLIT}/pretrained_tag_emb.npy'
 
     print("Loading data...")
     if not os.path.exists(MAP_PATH):
