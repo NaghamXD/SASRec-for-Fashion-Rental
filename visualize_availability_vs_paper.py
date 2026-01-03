@@ -3,12 +3,14 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import io
 
+
 # 1. Load User Data
 csv_data = """Features,Experiment_Name,Eval_Mode,HR@10,HR@100,HR@10_new,HR@100_new,Timestamp
-Both features,Leave-One-Out (Items),Rolling (Availability Mask),0.0239,0.1076,0.0116,0.0712,2026-01-03 01:26:10
-Image features,Leave-One-Out (Items),Rolling (Availability Mask),0.0185,0.1128,0.0108,0.0819,2026-01-03 12:53:19
-Tag features,Leave-One-Out (Items),Rolling (Availability Mask),0.0211,0.1105,0.0108,0.0747,2026-01-03 15:01:09
-No features,Leave-One-Out (Items),Rolling (Availability Mask),0.0164,0.0981,0.0095,0.0696,2026-01-03 14:51:13"""
+Both features,Leave-One-Out (Items),Rolling (Availability Mask),0.03390701258669407,0.11816080143847932,0.013562136728480487,0.08137282037088292,2026-01-04 01:12:53
+Image features,Leave-One-Out (Items),Rolling (Availability Mask),0.026714615977395325,0.12175699974312869,0.011624688624411846,0.0916136174923886,2026-01-04 01:15:37
+Tag features,Leave-One-Out (Items),Rolling (Availability Mask),0.03056768558951965,0.12715129720010274,0.013838915029061722,0.09189039579296983,2026-01-04 01:18:20
+No features,Leave-One-Out (Items),Rolling (Availability Mask),0.02902645774466992,0.11071153352170562,0.011347910323830611,0.08247993357320786,2026-01-04 01:20:55
+"""
 
 df_user = pd.read_csv(io.StringIO(csv_data))
 # Clean up feature names for the plot

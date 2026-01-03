@@ -173,7 +173,130 @@ def log_to_csv(filename, row_dict):
         if not file_exists:
             writer.writeheader()
         writer.writerow(row_dict)
+def get_eval_tasks():
+    tasks = []
+    
+    # --- SETTING 1: Items both 70/30 ---
+    # Adjust 'model_dir' to match your actual folder names
+    model_7030 = 'both_features_split_items' 
+    dataset_7030 = 'data_70_30/clothing_items_train'
+    name_7030 = '70-30 Split (Items)'
 
+    tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': True, 't': True, 'label': 'Both features'})
+
+    # --- SETTING 2: Items both loo  ---
+    model_loo = 'both_features_loo_items' 
+    dataset_loo = 'data_loo/clothing_items_train'
+    name_loo = 'Leave-One-Out (Items)'
+
+    tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': True, 't': True, 'label': 'Both features'})
+
+    # --- SETTING 3: Groups both 70/30---
+    # Adjust 'model_dir' to match your actual folder names
+    model_7030 = 'both_features_split_groups' 
+    dataset_7030 = 'data_70_30/clothing_groups_train'
+    name_7030 = '70-30 Split (Groups)'
+
+    tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': True, 't': True, 'label': 'Both features'})
+
+    # --- SETTING 4: Groups both loo ---
+    model_loo = 'both_features_loo_groups' 
+    dataset_loo = 'data_loo/clothing_groups_train'
+    name_loo = 'Leave-One-Out (Groups)'
+
+    tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': True, 't': True, 'label': 'Both features'})
+
+    # --- SETTING 5: Items img 70-30 ---
+    # Adjust 'model_dir' to match your actual folder names
+    model_7030 = 'img_embed_split_items' 
+    dataset_7030 = 'data_70_30/clothing_items_train'
+    name_7030 = '70-30 Split (Items)'
+
+    tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': True, 't': False, 'label': 'Image features'})
+
+    # --- SETTING 6: Items img loo ---
+    model_loo = 'img_embed_loo_items'
+    dataset_loo = 'data_loo/clothing_items_train'
+    name_loo = 'Leave-One-Out (Items)'
+
+    tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': True, 't': False, 'label': 'Image features'})
+
+    # --- SETTING 7: Groups img 70-30 ---
+    # Adjust 'model_dir' to match your actual folder names
+    model_7030 = 'img_embed_split_groups'
+    dataset_7030 = 'data_70_30/clothing_groups_train'
+    name_7030 = '70-30 Split (Groups)'
+
+    tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': True, 't': False, 'label': 'Image features'})
+
+    # --- SETTING 8: Groups img loo ---
+    model_loo = 'both_features_loo_groups' 
+    dataset_loo = 'data_loo/clothing_groups_train'
+    name_loo = 'Leave-One-Out (Groups)'
+
+    tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': True, 't': False, 'label': 'Image features'})
+    
+    # --- SETTING 9: Items tag 70-30  ---
+    # Adjust 'model_dir' to match your actual folder names
+    model_7030 = 'tag_features_split_items' 
+    dataset_7030 = 'data_70_30/clothing_items_train'
+    name_7030 = '70-30 Split (Items)'
+
+    tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': False, 't': True, 'label': 'Tag features'})
+    
+    # --- SETTING 10: Items tag loo ---
+    model_loo = 'tag_features_loo_items' 
+    dataset_loo = 'data_loo/clothing_items_train'
+    name_loo = 'Leave-One-Out (Items)'
+
+    tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': False, 't': True, 'label': 'Tag features'})
+
+    # --- SETTING 11: Groups tag 70-30---
+    # Adjust 'model_dir' to match your actual folder names
+    model_7030 = 'both_features_split_groups' 
+    dataset_7030 = 'data_70_30/clothing_groups_train'
+    name_7030 = '70-30 Split (Groups)'
+
+    tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': False, 't': True, 'label': 'Tag features'})
+
+    # --- SETTING 12: Groups tag loo ---
+    model_loo = 'tag_features_loo_groups' 
+    dataset_loo = 'data_loo/clothing_groups_train'
+    name_loo = 'Leave-One-Out (Groups)'
+
+    tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': False, 't': True, 'label': 'Tag features'})
+    
+    # --- SETTING 13: Items no features 70-30 ---
+    model_7030 = 'no_features_split_items' 
+    dataset_7030 = 'data_70_30/clothing_items_train'
+    name_7030 = '70-30 Split (Items)'
+
+    tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': False, 't': False, 'label': 'No features'})
+
+    # --- SETTING 14: Items no features loo ---
+    model_loo = 'no_features_loo_items' 
+    dataset_loo = 'data_loo/clothing_items_train'
+    name_loo = 'Leave-One-Out (Items)'
+
+    tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': False, 't': False, 'label': 'No features'})
+
+    # --- SETTING 15: Groups no fetures 70-30---
+
+    model_7030 = 'no_features_split_groups' 
+    dataset_7030 = 'data_70_30/clothing_groups_train'
+    name_7030 = '70-30 Split (Groups)'
+
+    tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': False, 't': False, 'label': 'No features'})
+
+    # --- SETTING 16: Groups no features loo ---
+    model_loo = 'no_features_loo_groups' 
+    dataset_loo = 'data_loo/clothing_groups_train'
+    name_loo = 'Leave-One-Out (Groups)'
+
+    tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': False, 't': False, 'label': 'No features'})
+
+    return tasks
+'''
 def get_eval_tasks():
     tasks = []
 
@@ -199,7 +322,7 @@ def get_eval_tasks():
     #tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': False, 't': False, 'label': 'No features'})
 
     return tasks
-
+'''
 def str2bool(v):
     if isinstance(v, bool): return v
     if v.lower() in ('yes', 'true', 't', 'y', '1'): return True

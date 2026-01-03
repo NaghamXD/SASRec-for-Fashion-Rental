@@ -14,7 +14,49 @@ from python.model import SASRec
 # ==========================================
 #  HELPER CLASSES & FUNCTIONS (KEEP THESE)
 # ==========================================
+def load_group_mapping(dataset_folder):
+    """
+    Loads mapping from Item_ID (int) -> Group_ID (str)
+    to support Group-Based Discovery metrics.
+    """
+    # 1. Check for outfits.csv in typical locations
+    csv_path = 'outfits.csv'
+    if not os.path.exists(csv_path):
+        # Try one level up if running from subfolder
+        csv_path = '../outfits.csv'
+    
+    if not os.path.exists(csv_path):
+        print(f"Warning: {csv_path} not found. Group discovery metric will default to Item discovery.")
+        return {}
 
+    try:
+        outfits = pd.read_csv(csv_path, sep=';')
+        
+        # 2. Load the Item Map (Int -> Str)
+        map_path = os.path.join(dataset_folder, 'item_maps.pkl')
+        if not os.path.exists(map_path):
+            print(f"Warning: {map_path} not found.")
+            return {}
+            
+        with open(map_path, 'rb') as f:
+            user_map, item_map = pickle.load(f)
+
+        # 3. Create Map: {Integer_ID: Group_ID_String}
+        inv_item_map = {v: k for k, v in item_map.items()} # {1: 'ItemA_Str'}
+        raw_item_to_group = dict(zip(outfits['id'], outfits['group'])) # {'ItemA_Str': 'GroupA'}
+        
+        item_int_to_group = {}
+        for i_int, s_id in inv_item_map.items():
+            if s_id in raw_item_to_group:
+                item_int_to_group[i_int] = raw_item_to_group[s_id]
+                
+        print(f"--> [Info] Loaded Group Map with {len(item_int_to_group)} items.")
+        return item_int_to_group
+        
+    except Exception as e:
+        print(f"Warning: Failed to load group map: {e}")
+        return {}
+    
 class AvailabilityMask:
     def __init__(self, orders_path, triplets_path, item_map, user_map):
         print("Building Availability Index...")
@@ -61,23 +103,36 @@ class AvailabilityMask:
         return unavailable
 
 # --- YOUR EVALUATION LOGIC FUNCTIONS ---
-def evaluate_static_logic(model, test_dict, train_seqs, history_dict, args):
+def evaluate_static_logic(model, test_dict, train_seqs, history_dict, args, item_to_group_map={}):
     """Calculates metrics using fixed sequences (Set Recall)."""
     HR_10_all, HR_100_all = [], []
     HR_10_new, HR_100_new = [], []
-    # Define debug_user again if needed, or pass it in
-    debug_user = 5574 # Hardcode the user ID from your previous log
-    
+
     for u, test_items in test_dict.items():
         if u not in train_seqs: continue
         if len(test_items) == 0: continue
-        
         seq = train_seqs[u]
         seq = [0] * (args.maxlen - len(seq)) + seq[-args.maxlen:]
         seq_input = np.array([seq])
-        # AFTER calculating seq_input, but BEFORE model(...):
-        if u == debug_user:
-             print(f"DEBUG [Static ] Input (Last 5): {seq_input[0][-5:]}")
+        
+        # 1. Convert History to GROUPS
+        history_items = history_dict.get(u, set())
+        history_groups = set()
+        for item in history_items:
+            if item in item_to_group_map:
+                history_groups.add(item_to_group_map[item])
+
+        # 2. Filter Test Items (Keep only those from New Groups)
+        valid_new_items = []
+        for x in test_items:
+            t_group = item_to_group_map.get(x, None)
+            if t_group:
+                if t_group not in history_groups:
+                    valid_new_items.append(x)
+            else:
+                # Fallback if map missing
+                if x not in history_items:
+                    valid_new_items.append(x)
 
         with torch.no_grad():
             log_feats = model.log2feats(seq_input)
@@ -88,40 +143,39 @@ def evaluate_static_logic(model, test_dict, train_seqs, history_dict, args):
             last_logits[0] = -np.inf
             _, indices = torch.topk(last_logits, 100)
             recs = indices.cpu().numpy().tolist()
-            # --- DEBUG PRINT ---
-            if u == debug_user:
-                 print(f"DEBUG [Static ] Top 5 Recs: {recs[:5]}")
-                 print(f"DEBUG [Static ] Target: {test_items}")
-            # -------------------
+
         # Hit logic
         hit_10 = any(x in recs[:10] for x in test_items)
         hit_100 = any(x in recs[:100] for x in test_items)
         HR_10_all.append(1 if hit_10 else 0)
         HR_100_all.append(1 if hit_100 else 0)
 
-        history = history_dict.get(u, set())
-        valid_test_items = [x for x in test_items if x not in history]
-        if valid_test_items:
-            hit_10_new = any(x in recs[:10] for x in valid_test_items)
-            hit_100_new = any(x in recs[:100] for x in valid_test_items)
+        if valid_new_items:
+            hit_10_new = any(x in recs[:10] for x in valid_new_items)
+            hit_100_new = any(x in recs[:100] for x in valid_new_items)
             HR_10_new.append(1 if hit_10_new else 0)
             HR_100_new.append(1 if hit_100_new else 0)
 
     return np.mean(HR_10_all), np.mean(HR_100_all), np.mean(HR_10_new), np.mean(HR_100_new)
 
 # --- ROLLING EVALUATION LOGIC ---
-def evaluate_rolling_logic(model, test_dict, train_seqs, date_dict, history_dict, args, masker=None):
+def evaluate_rolling_logic(model, test_dict, train_seqs, date_dict, history_dict, args, masker=None, item_to_group_map={}):
     total_events = 0
+    total_new_events = 0  # <--- NEW COUNTER
     hits_10_all, hits_100_all = 0, 0
     hits_10_new, hits_100_new = 0, 0
     
-    debug_user = 5574 # Hardcode the user from your logs
-
     for u, test_items in test_dict.items():
         if u not in train_seqs: continue
-
         curr_seq = train_seqs[u][:] 
         user_dates = date_dict.get(u, [])
+
+        # 1. Build History Groups set ONCE for the user (to start)
+        current_history_groups = set()
+        for item in train_seqs[u]:
+            if item in item_to_group_map:
+                current_history_groups.add(item_to_group_map[item])
+
         for i, target_item in enumerate(test_items):
             current_date = user_dates[i] if i < len(user_dates) else None
             # OLD (Incorrect Post-Padding)
@@ -133,9 +187,6 @@ def evaluate_rolling_logic(model, test_dict, train_seqs, date_dict, history_dict
             # 2. Add zeros to the FRONT (Left side)
             padded_seq = [0] * (args.maxlen - len(seq_slice)) + seq_slice
             seq_input = np.array([padded_seq])
-            # --- 2. THEN PRINT IT ---
-            if u == debug_user and i == 0: # i==0 to print only the first step
-                 print(f"DEBUG [Rolling] Input (Last 5): {seq_input[0][-5:]}")
             with torch.no_grad():
                 log_feats = model.log2feats(seq_input)
                 final_feat = log_feats[:, -1, :] 
@@ -150,23 +201,52 @@ def evaluate_rolling_logic(model, test_dict, train_seqs, date_dict, history_dict
                 last_logits[0] = -np.inf
                 _, indices = torch.topk(last_logits, 100)
                 recs = indices.cpu().numpy().tolist()
-                # --- DEBUG PRINT ---
-                if u == debug_user and i == 0:
-                    print(f"DEBUG [Rolling] Top 5 Recs: {recs[:5]}")
-                    print(f"DEBUG [Rolling] Target: {target_item}")
-                # -------------------
+            
+            target_group = item_to_group_map.get(target_item, None)
+            
+            # 2. Get Groups currently in History
+            # (Optimization: Build this set once outside the inner loop if possible, 
+            # but for Rolling it changes every step, so we build it fresh or maintain it)
+            history_items = set(curr_seq) # Get all items in current sequence
+            history_groups = set()
+            for h_item in history_items:
+                if h_item in item_to_group_map:
+                    history_groups.add(item_to_group_map[h_item])
+
+            # --- METRIC CALCULATION ---
             is_hit_10 = target_item in recs[:10]
             is_hit_100 = target_item in recs[:100]
+            
+            # General Metrics
             hits_10_all += 1 if is_hit_10 else 0
             hits_100_all += 1 if is_hit_100 else 0
-            if target_item not in history_dict.get(u, set()):
+            total_events += 1
+            
+            # 3. Check Condition
+            # If we have map data, check Groups. If not, fallback to Item check.
+            is_new = False
+            if target_group:
+                is_new = target_group not in history_groups
+            else:
+                is_new = target_item not in history_items
+
+            if is_new:
                 hits_10_new += 1 if is_hit_10 else 0
                 hits_100_new += 1 if is_hit_100 else 0
-            total_events += 1
+                total_new_events += 1 # Important: Use this counter!
+
+            # 4. UPDATE History Groups
+            current_history_groups.add(target_group)
+            
+            # Update sequence
             curr_seq.append(target_item)
     
     if total_events == 0: return 0,0,0,0
-    return hits_10_all/total_events, hits_100_all/total_events, hits_10_new/total_events, hits_100_new/total_events
+    # Avoid division by zero if there are NO new items in the entire test set
+    hr_10_new_avg = hits_10_new / total_new_events if total_new_events > 0 else 0
+    hr_100_new_avg = hits_100_new / total_new_events if total_new_events > 0 else 0
+
+    return hits_10_all/total_events, hits_100_all/total_events, hr_10_new_avg, hr_100_new_avg
 
 # ==========================================
 #  NEW AUTOMATION HELPERS
@@ -185,27 +265,125 @@ def log_to_csv(filename, row_dict):
 
 def get_eval_tasks():
     tasks = []
-
-    # --- SETTING 1: 70-30 SPLIT ---
+    
+    # --- SETTING 1: Items both 70/30 ---
     # Adjust 'model_dir' to match your actual folder names
     model_7030 = 'both_features_split_items' 
     dataset_7030 = 'data_70_30/clothing_items_train'
     name_7030 = '70-30 Split (Items)'
 
     tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': True, 't': True, 'label': 'Both features'})
-    #tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': True, 't': False, 'label': 'Image features'})
-    #tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': False, 't': True, 'label': 'Tag features'})
-    #tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': False, 't': False, 'label': 'No features'})
 
-    # --- SETTING 2: LEAVE-ONE-OUT SPLIT ---
+    # --- SETTING 2: Items both loo  ---
     model_loo = 'both_features_loo_items' 
     dataset_loo = 'data_loo/clothing_items_train'
     name_loo = 'Leave-One-Out (Items)'
 
     tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': True, 't': True, 'label': 'Both features'})
-    #tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': True, 't': False, 'label': 'Image features'})
-    #tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': False, 't': True, 'label': 'Tag features'})
-    #tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': False, 't': False, 'label': 'No features'})
+
+    # --- SETTING 3: Groups both 70/30---
+    # Adjust 'model_dir' to match your actual folder names
+    model_7030 = 'both_features_split_groups' 
+    dataset_7030 = 'data_70_30/clothing_groups_train'
+    name_7030 = '70-30 Split (Groups)'
+
+    tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': True, 't': True, 'label': 'Both features'})
+
+    # --- SETTING 4: Groups both loo ---
+    model_loo = 'both_features_loo_groups' 
+    dataset_loo = 'data_loo/clothing_groups_train'
+    name_loo = 'Leave-One-Out (Groups)'
+
+    tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': True, 't': True, 'label': 'Both features'})
+
+    # --- SETTING 5: Items img 70-30 ---
+    # Adjust 'model_dir' to match your actual folder names
+    model_7030 = 'img_embed_split_items' 
+    dataset_7030 = 'data_70_30/clothing_items_train'
+    name_7030 = '70-30 Split (Items)'
+
+    tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': True, 't': False, 'label': 'Image features'})
+
+    # --- SETTING 6: Items img loo ---
+    model_loo = 'img_embed_loo_items'
+    dataset_loo = 'data_loo/clothing_items_train'
+    name_loo = 'Leave-One-Out (Items)'
+
+    tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': True, 't': False, 'label': 'Image features'})
+
+    # --- SETTING 7: Groups img 70-30 ---
+    # Adjust 'model_dir' to match your actual folder names
+    model_7030 = 'img_embed_split_groups'
+    dataset_7030 = 'data_70_30/clothing_groups_train'
+    name_7030 = '70-30 Split (Groups)'
+
+    tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': True, 't': False, 'label': 'Image features'})
+
+    # --- SETTING 8: Groups img loo ---
+    model_loo = 'both_features_loo_groups' 
+    dataset_loo = 'data_loo/clothing_groups_train'
+    name_loo = 'Leave-One-Out (Groups)'
+
+    tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': True, 't': False, 'label': 'Image features'})
+    
+    # --- SETTING 9: Items tag 70-30  ---
+    # Adjust 'model_dir' to match your actual folder names
+    model_7030 = 'tag_features_split_items' 
+    dataset_7030 = 'data_70_30/clothing_items_train'
+    name_7030 = '70-30 Split (Items)'
+
+    tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': False, 't': True, 'label': 'Tag features'})
+    
+    # --- SETTING 10: Items tag loo ---
+    model_loo = 'tag_features_loo_items' 
+    dataset_loo = 'data_loo/clothing_items_train'
+    name_loo = 'Leave-One-Out (Items)'
+
+    tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': False, 't': True, 'label': 'Tag features'})
+
+    # --- SETTING 11: Groups tag 70-30---
+    # Adjust 'model_dir' to match your actual folder names
+    model_7030 = 'both_features_split_groups' 
+    dataset_7030 = 'data_70_30/clothing_groups_train'
+    name_7030 = '70-30 Split (Groups)'
+
+    tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': False, 't': True, 'label': 'Tag features'})
+
+    # --- SETTING 12: Groups tag loo ---
+    model_loo = 'tag_features_loo_groups' 
+    dataset_loo = 'data_loo/clothing_groups_train'
+    name_loo = 'Leave-One-Out (Groups)'
+
+    tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': False, 't': True, 'label': 'Tag features'})
+    
+    # --- SETTING 13: Items no features 70-30 ---
+    model_7030 = 'no_features_split_items' 
+    dataset_7030 = 'data_70_30/clothing_items_train'
+    name_7030 = '70-30 Split (Items)'
+
+    tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': False, 't': False, 'label': 'No features'})
+
+    # --- SETTING 14: Items no features loo ---
+    model_loo = 'no_features_loo_items' 
+    dataset_loo = 'data_loo/clothing_items_train'
+    name_loo = 'Leave-One-Out (Items)'
+
+    tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': False, 't': False, 'label': 'No features'})
+
+    # --- SETTING 15: Groups no fetures 70-30---
+
+    model_7030 = 'no_features_split_groups' 
+    dataset_7030 = 'data_70_30/clothing_groups_train'
+    name_7030 = '70-30 Split (Groups)'
+
+    tasks.append({'name': name_7030, 'model_dir': model_7030, 'dataset': dataset_7030, 'v': False, 't': False, 'label': 'No features'})
+
+    # --- SETTING 16: Groups no features loo ---
+    model_loo = 'no_features_loo_groups' 
+    dataset_loo = 'data_loo/clothing_groups_train'
+    name_loo = 'Leave-One-Out (Groups)'
+
+    tasks.append({'name': name_loo, 'model_dir': model_loo, 'dataset': dataset_loo, 'v': False, 't': False, 'label': 'No features'})
 
     return tasks
 
@@ -242,7 +420,7 @@ if __name__ == '__main__':
 
     base_args = parser.parse_args()
     
-    output_csv = "evaluation_results_debug.csv"
+    output_csv = "evaluation_results_new_metrics_per_group.csv"
     print(f"Results will be saved to: {output_csv}\n")
 
     tasks = get_eval_tasks()
@@ -257,17 +435,54 @@ if __name__ == '__main__':
         args.use_visual = task['v']
         args.use_tags = task['t']
 
+
         # 3. Dynamic Data Loading
         # We need to construct paths similar to how main.py or your old evaluate_model did
         # Assuming args.dataset is like 'data_70_30/clothing_items_train'
+        # ------------------------------------------------------------------
+        # CORRECT PATH LOGIC
+        # ------------------------------------------------------------------
+        # 1. Determine the raw folder name (e.g., 'data_70_30' or 'data_loo')
+        raw_folder_name = os.path.dirname(task['dataset']) if 'dataset' in task else os.path.dirname(args.dataset)
         
+        # 2. Check if it already starts with 'data/' or needs it appended
+        # We try to find where the actual pickle files are.
+        if os.path.exists(os.path.join('data', raw_folder_name)):
+            dataset_folder = os.path.join('data', raw_folder_name) # 'data/data_70_30'
+        elif os.path.exists(raw_folder_name):
+            dataset_folder = raw_folder_name
+        else:
+            # Fallback based on task name if all else fails
+            if 'loo' in task['name'].lower():
+                dataset_folder = 'data/data_loo'
+            else:
+                dataset_folder = 'data/data_70_30'
+
+        # 3. Load the Group Map using the CORRECT folder
+        # 1. Check if this is a Group Task
+        is_group_task = 'group' in task['dataset'].lower() or 'group' in task['name'].lower()
+
+        # 2. Load Group Map ONLY for Item Tasks
+        if is_group_task:
+            print("  --> Group Task detected. Using direct ID checks (skipping group map).")
+            group_map = {} 
+        else:
+            # Load the map as before for Item tasks
+            raw_folder_name = os.path.dirname(task['dataset']) if 'dataset' in task else os.path.dirname(args.dataset)
+            # ... (the path logic we wrote previously) ...
+            group_map = load_group_mapping(dataset_folder)
+        
+        # 4. Update data_root for the rest of the script
+        # This ensures pkl_filename and map_filename below use the correct path
+        data_root = dataset_folder 
+        # ------------------------------------------------------------------
         # Extract folder: 'data_70_30'
         dataset_subdir = os.path.dirname(args.dataset)
         # Construct full root: 'data/data_70_30'
         data_root = os.path.join('data', dataset_subdir)
         
         # Determine Pickle File Name
-        if 'group' in args.dataset:
+        if is_group_task:
             pkl_filename = 'test_data_groups.pkl'
             map_filename = 'group_maps.pkl'
         else:
@@ -351,13 +566,9 @@ if __name__ == '__main__':
                 print(f"    --> Group Dataset detected. Skipping Rolling Eval (Running Static ONLY).")
             else:
                 # 1. Rolling + No Mask (Only for Items)
-                # --- PASTE BLOCK 1 HERE (Before Rolling No Mask) ---
-                debug_u = list(test_dict.keys())[0]
-                print(f"\nDEBUG [Main]: Initial History for User {debug_u}: {len(train_seqs[debug_u])}")
-                # ---------------------------------------------------
                 print("    [1/3] Rolling (No Mask)...")
                 try:
-                    metrics = evaluate_rolling_logic(model, test_dict, train_seqs, date_dict, history_dict, args, masker=None)
+                    metrics = evaluate_rolling_logic(model, test_dict, train_seqs, date_dict, history_dict, args, masker=None, item_to_group_map=group_map)
                     log_to_csv(output_csv, {
                         'Features': task['label'],
                         'Experiment_Name': task['name'],
@@ -377,7 +588,7 @@ if __name__ == '__main__':
                     # Initialize Masker (Global files assumed, adjust if dataset specific)
                     masker = AvailabilityMask('original_orders.csv', 'user_activity_triplets.csv', item_map, user_map)
                     
-                    metrics = evaluate_rolling_logic(model, test_dict, train_seqs, date_dict, history_dict, args, masker=masker)
+                    metrics = evaluate_rolling_logic(model, test_dict, train_seqs, date_dict, history_dict, args, masker=masker, item_to_group_map=group_map)
                     log_to_csv(output_csv, {
                         'Features': task['label'],
                         'Experiment_Name': task['name'],
@@ -390,13 +601,11 @@ if __name__ == '__main__':
                     })
                 except Exception as e:
                     print(f"    Error (Masking might not be set up): {e}")
-            # --- PASTE BLOCK 3 HERE (Before Static) ---
-            print(f"DEBUG [Main]: History Before Static for User {debug_u}: {len(train_seqs[debug_u])}")
-            # ------------------------------------------
+
             # 3. Static (Pure) - Run for EVERYONE
             print("    [3/3] Static Eval...")
             try:
-                metrics = evaluate_static_logic(model, test_dict, train_seqs, history_dict, args)
+                metrics = evaluate_static_logic(model, test_dict, train_seqs, history_dict, args, item_to_group_map=group_map)
                 log_to_csv(output_csv, {
                     'Features': task['label'],
                     'Experiment_Name': task['name'],
@@ -414,3 +623,7 @@ if __name__ == '__main__':
             print(f"CRITICAL FAILURE on task {task['name']}: {e}")
 
     print("\nAll evaluations complete.")
+
+
+
+    
