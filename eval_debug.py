@@ -65,14 +65,20 @@ def evaluate_static_logic(model, test_dict, train_seqs, history_dict, args):
     """Calculates metrics using fixed sequences (Set Recall)."""
     HR_10_all, HR_100_all = [], []
     HR_10_new, HR_100_new = [], []
-
+    # Define debug_user again if needed, or pass it in
+    debug_user = 5574 # Hardcode the user ID from your previous log
+    
     for u, test_items in test_dict.items():
         if u not in train_seqs: continue
         if len(test_items) == 0: continue
+        
         seq = train_seqs[u]
         seq = [0] * (args.maxlen - len(seq)) + seq[-args.maxlen:]
         seq_input = np.array([seq])
-        
+        # AFTER calculating seq_input, but BEFORE model(...):
+        if u == debug_user:
+             print(f"DEBUG [Static ] Input (Last 5): {seq_input[0][-5:]}")
+
         with torch.no_grad():
             log_feats = model.log2feats(seq_input)
             final_feat = log_feats[:, -1, :]
@@ -82,7 +88,11 @@ def evaluate_static_logic(model, test_dict, train_seqs, history_dict, args):
             last_logits[0] = -np.inf
             _, indices = torch.topk(last_logits, 100)
             recs = indices.cpu().numpy().tolist()
-
+            # --- DEBUG PRINT ---
+            if u == debug_user:
+                 print(f"DEBUG [Static ] Top 5 Recs: {recs[:5]}")
+                 print(f"DEBUG [Static ] Target: {test_items}")
+            # -------------------
         # Hit logic
         hit_10 = any(x in recs[:10] for x in test_items)
         hit_100 = any(x in recs[:100] for x in test_items)
@@ -102,12 +112,14 @@ def evaluate_static_logic(model, test_dict, train_seqs, history_dict, args):
 # --- ROLLING EVALUATION LOGIC ---
 def evaluate_rolling_logic(model, test_dict, train_seqs, date_dict, history_dict, args, masker=None):
     total_events = 0
-    total_new_events = 0  # <--- NEW COUNTER
     hits_10_all, hits_100_all = 0, 0
     hits_10_new, hits_100_new = 0, 0
     
+    debug_user = 5574 # Hardcode the user from your logs
+
     for u, test_items in test_dict.items():
         if u not in train_seqs: continue
+
         curr_seq = train_seqs[u][:] 
         user_dates = date_dict.get(u, [])
         for i, target_item in enumerate(test_items):
@@ -121,6 +133,9 @@ def evaluate_rolling_logic(model, test_dict, train_seqs, date_dict, history_dict
             # 2. Add zeros to the FRONT (Left side)
             padded_seq = [0] * (args.maxlen - len(seq_slice)) + seq_slice
             seq_input = np.array([padded_seq])
+            # --- 2. THEN PRINT IT ---
+            if u == debug_user and i == 0: # i==0 to print only the first step
+                 print(f"DEBUG [Rolling] Input (Last 5): {seq_input[0][-5:]}")
             with torch.no_grad():
                 log_feats = model.log2feats(seq_input)
                 final_feat = log_feats[:, -1, :] 
@@ -135,29 +150,23 @@ def evaluate_rolling_logic(model, test_dict, train_seqs, date_dict, history_dict
                 last_logits[0] = -np.inf
                 _, indices = torch.topk(last_logits, 100)
                 recs = indices.cpu().numpy().tolist()
-            
-            # --- METRIC CALCULATION ---
+                # --- DEBUG PRINT ---
+                if u == debug_user and i == 0:
+                    print(f"DEBUG [Rolling] Top 5 Recs: {recs[:5]}")
+                    print(f"DEBUG [Rolling] Target: {target_item}")
+                # -------------------
             is_hit_10 = target_item in recs[:10]
             is_hit_100 = target_item in recs[:100]
-            
-            # General Metrics
             hits_10_all += 1 if is_hit_10 else 0
             hits_100_all += 1 if is_hit_100 else 0
-            total_events += 1
-            
-            # New/Unique Metrics (The Fix)
             if target_item not in history_dict.get(u, set()):
                 hits_10_new += 1 if is_hit_10 else 0
                 hits_100_new += 1 if is_hit_100 else 0
-                total_new_events += 1  # <--- Increment valid denominator
+            total_events += 1
             curr_seq.append(target_item)
     
     if total_events == 0: return 0,0,0,0
-    # Avoid division by zero if there are NO new items in the entire test set
-    hr_10_new_avg = hits_10_new / total_new_events if total_new_events > 0 else 0
-    hr_100_new_avg = hits_100_new / total_new_events if total_new_events > 0 else 0
-
-    return hits_10_all/total_events, hits_100_all/total_events, hr_10_new_avg, hr_100_new_avg
+    return hits_10_all/total_events, hits_100_all/total_events, hits_10_new/total_events, hits_100_new/total_events
 
 # ==========================================
 #  NEW AUTOMATION HELPERS
@@ -233,7 +242,7 @@ if __name__ == '__main__':
 
     base_args = parser.parse_args()
     
-    output_csv = "evaluation_results.csv"
+    output_csv = "evaluation_results_debug.csv"
     print(f"Results will be saved to: {output_csv}\n")
 
     tasks = get_eval_tasks()
@@ -342,6 +351,10 @@ if __name__ == '__main__':
                 print(f"    --> Group Dataset detected. Skipping Rolling Eval (Running Static ONLY).")
             else:
                 # 1. Rolling + No Mask (Only for Items)
+                # --- PASTE BLOCK 1 HERE (Before Rolling No Mask) ---
+                debug_u = list(test_dict.keys())[0]
+                print(f"\nDEBUG [Main]: Initial History for User {debug_u}: {len(train_seqs[debug_u])}")
+                # ---------------------------------------------------
                 print("    [1/3] Rolling (No Mask)...")
                 try:
                     metrics = evaluate_rolling_logic(model, test_dict, train_seqs, date_dict, history_dict, args, masker=None)
@@ -377,7 +390,9 @@ if __name__ == '__main__':
                     })
                 except Exception as e:
                     print(f"    Error (Masking might not be set up): {e}")
-
+            # --- PASTE BLOCK 3 HERE (Before Static) ---
+            print(f"DEBUG [Main]: History Before Static for User {debug_u}: {len(train_seqs[debug_u])}")
+            # ------------------------------------------
             # 3. Static (Pure) - Run for EVERYONE
             print("    [3/3] Static Eval...")
             try:
