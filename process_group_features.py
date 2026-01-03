@@ -3,7 +3,7 @@ import pandas as pd
 import pickle
 import os
 # 1. Define these outside so they are easy to change
-SPLIT = "data_70_30" # or "data_loo"
+SPLIT = "data_loo" #"data_70_30" or "data_loo"
 # These should be used inside the function!
 ITEM_MAP_PATH = f'data/{SPLIT}/item_maps.pkl'
 GROUP_MAP_PATH = f'data/{SPLIT}/group_maps.pkl'

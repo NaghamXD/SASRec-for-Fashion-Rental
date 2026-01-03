@@ -8,7 +8,7 @@ def process_tags():
     # 1. Config
     OUTFITS_CSV = 'outfits.csv'
     # Change these lines in process_tags.py
-    SPLIT = "data_70_30" # or "data_loo"
+    SPLIT = "data_loo" # "data_70_30" or "data_loo"
     MAP_PATH = f'data/{SPLIT}/item_maps.pkl'
     OUTPUT_PATH = f'data/{SPLIT}/pretrained_tag_emb.npy'
 

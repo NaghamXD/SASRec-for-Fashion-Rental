@@ -1,6 +1,6 @@
 import os
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
-
+import pickle
 import time
 import torch
 import argparse
@@ -20,17 +20,20 @@ parser.add_argument('--dataset', required=True)
 parser.add_argument('--train_dir', required=True)
 parser.add_argument('--batch_size', default=128, type=int)
 parser.add_argument('--lr', default=0.001, type=float)
-parser.add_argument('--maxlen', default=200, type=int)
+parser.add_argument('--maxlen', default=50, type=int)
 parser.add_argument('--hidden_units', default=50, type=int)
 parser.add_argument('--num_blocks', default=2, type=int)
 parser.add_argument('--num_epochs', default=1000, type=int)
 parser.add_argument('--num_heads', default=1, type=int)
-parser.add_argument('--dropout_rate', default=0.2, type=float)
+parser.add_argument('--dropout_rate', default=0.7, type=float)
 parser.add_argument('--l2_emb', default=0.0, type=float)
 parser.add_argument('--device', default='cuda', type=str)
 parser.add_argument('--inference_only', default=False, type=str2bool)
 parser.add_argument('--state_dict_path', default=None, type=str)
 parser.add_argument('--norm_first', action='store_true', default=False)
+# 1. ADD THESE NEW ARGUMENTS TO THE PARSER
+parser.add_argument('--use_visual', default=True, type=str2bool)
+parser.add_argument('--use_tags', default=True, type=str2bool)
 
 args = parser.parse_args()
 if not os.path.isdir(args.dataset + '_' + args.train_dir):
@@ -48,11 +51,23 @@ if __name__ == '__main__':
 
     [user_train, user_valid, user_test, usernum, itemnum] = dataset
     # NEW: Force itemnum to match the catalog map size
-    import pickle
-    map_file = 'data/group_maps.pkl' if 'group' in args.dataset else 'data/item_maps.pkl'
+    
+    # 1. Extract the subdirectory (e.g., 'data_70_30') from the dataset arg
+    dataset_subdir = os.path.dirname(args.dataset) 
+    # 2. Build the full path (e.g., 'data/data_70_30')
+    data_root = os.path.join('data', dataset_subdir)
+
+    # 3. Construct the dynamic map path
+    if 'group' in args.dataset:
+        map_file = os.path.join(data_root, 'group_maps.pkl')
+    else:
+        map_file = os.path.join(data_root, 'item_maps.pkl')
+
+    print(f"--> Loading Maps from: {map_file}") # Debug print to be safe
+
     with open(map_file, 'rb') as f:
         maps = pickle.load(f)
-        itemnum = len(maps[1]) # Always use the full catalog size
+        itemnum = len(maps[1])
     
     print(f'Total Catalog Items: {itemnum}')
     
@@ -107,17 +122,29 @@ if __name__ == '__main__':
     #adam_optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.98))
     #I commented the previous line out and added the followings.
     # Separate the alpha parameters from the rest of the model weights
-    alpha_params = [model.alpha_visual, model.alpha_tags]
+    # 2. UPDATE OPTIMIZER LOGIC (Replace the hardcoded alpha_params list)
+    # ------------------------------------------------------------------
+    alpha_params = []
+    if args.use_visual:
+        alpha_params.append(model.alpha_visual)
+    if args.use_tags:
+        alpha_params.append(model.alpha_tags)
+    
+    # Get IDs of alpha params to exclude them from base_params
     alpha_params_ids = list(map(id, alpha_params))
     base_params = [p for p in model.parameters() if id(p) not in alpha_params_ids]
 
-    # Define the optimizer with two different learning rates
-    # We give Alphas a higher LR (e.g., 0.01) so they can react faster 
-    # while the rest of the model learns at the standard rate (0.001)
+    # UPDATE THE OPTIMIZER
     adam_optimizer = torch.optim.Adam([
-        {'params': base_params},
-        {'params': alpha_params, 'lr': 0.01} 
+        # Apply L2 (weight_decay) to the base parameters (includes item_emb AND projection layers)
+        {'params': base_params, 'weight_decay': 1e-5}, 
+        
+        # Do NOT apply L2 to the alphas (or use very small), as we want them to grow freely
+        {'params': alpha_params, 'lr': 0.01, 'weight_decay': 0.0} 
+        # NEW (Slower, safer growth)
+        #{'params': alpha_params, 'lr': args.lr, 'weight_decay': 0.0}
     ], lr=args.lr, betas=(0.9, 0.98))
+    # ------------------------------------------------------------------
     # --- Early Stopping Setup ---
     patience = 5  # Number of evaluations to wait before stopping
     patience_counter = 0 
@@ -147,11 +174,13 @@ if __name__ == '__main__':
 
         if epoch % 20 == 0:
             model.eval()
-            # Extract current Alpha values
-            curr_alpha_v = model.alpha_visual.item()
-            curr_alpha_t = model.alpha_tags.item()
+            # 3. UPDATE LOGGING LOGIC (Handle missing alphas safely)
+            # ------------------------------------------------------
+            curr_alpha_v = model.alpha_visual.item() if args.use_visual else 0.0
+            curr_alpha_t = model.alpha_tags.item() if args.use_tags else 0.0
 
             print(f"\n[Feature Importance] Alpha Visual: {curr_alpha_v:.4f}, Alpha Tags: {curr_alpha_t:.4f}")
+            # ------------------------------------------------------
             
             t1 = time.time() - t0
             T += t1

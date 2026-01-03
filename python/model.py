@@ -1,3 +1,5 @@
+import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 import numpy as np
 import torch
 
@@ -24,147 +26,119 @@ class PointWiseFeedForward(torch.nn.Module):
 
 class SASRec(torch.nn.Module):
     def __init__(self, user_num, item_num, args):
-            super(SASRec, self).__init__()
+        super(SASRec, self).__init__()
 
-            self.user_num = user_num
-            self.item_num = item_num
-            self.dev = args.device
-            self.norm_first = args.norm_first
+        self.user_num = user_num
+        self.item_num = item_num
+        self.dev = args.device
+        self.norm_first = args.norm_first
+        self.item_emb = torch.nn.Embedding(self.item_num+1, args.hidden_units, padding_idx=0)
 
-            # TODO: loss += args.l2_emb for regularizing embedding vectors during training
-            # https://stackoverflow.com/questions/42704283/adding-l1-l2-regularization-in-pytorch
-            self.item_emb = torch.nn.Embedding(self.item_num+1, args.hidden_units, padding_idx=0)
+        # ... (Your Dynamic Path Logic here is fine) ...
+        dataset_subdir = os.path.dirname(args.dataset)
+        if dataset_subdir:
+            data_root = os.path.join('data', dataset_subdir)
+        else:
+            data_root = 'data'
+        print(f"--> [Model] Loading features from root: {data_root}")
 
-            # --- DYNAMIC FEATURE LOADING (Items vs Groups) ---
-            # Determine paths based on dataset name
+        self.use_visual = args.use_visual
+        self.use_tags = args.use_tags
+
+        # 1. VISUAL FEATURES
+        if self.use_visual:
             if args.dataset and 'group' in args.dataset:
-                img_path = 'data/pretrained_group_emb_1280.npy'
-                tag_path = 'data/pretrained_group_tag_emb.npy'
-                print(f"--> Detected GROUP dataset ({args.dataset}). Loading Group embeddings.")
+                img_filename = 'pretrained_group_emb_1280.npy'
             else:
-                img_path = 'data/pretrained_item_emb_1280.npy'
-                tag_path = 'data/pretrained_tag_emb.npy'
-                print(f"--> Detected ITEM dataset ({args.dataset}). Loading Item embeddings.")
-
-            # --- NEW: Learnable weights for feature fusion ---
-            # We initialize them at 0.1 so the model starts by relying 
-            # mostly on IDs and slowly learns how much to trust content.
+                img_filename = 'pretrained_item_emb_1280.npy'
+            img_path = os.path.join(data_root, img_filename)
+            
             self.alpha_visual = torch.nn.Parameter(torch.tensor(0.1).to(self.dev))
-            self.alpha_tags = torch.nn.Parameter(torch.tensor(0.1).to(self.dev))
-
-            # =================================================
-            # FEATURE 1: IMAGES (EfficientNet)
-            # =================================================
             self.visual_dim = 1280
-            # Shrink Layer: 1280 -> 50
             self.dim_reduction_layer = torch.nn.Linear(self.visual_dim, args.hidden_units)
-            
-            # CHANGE: Add LayerNorm for Visual Features
             self.visual_norm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
-    
-            # Fixed Lookup Table
             self.visual_features = torch.nn.Embedding(self.item_num+1, self.visual_dim, padding_idx=0)
-            
             try:
                 weights = np.load(img_path)
-                # Safety Check: Does file size match model size?
                 if weights.shape[0] == self.item_num + 1:
                     self.visual_features.weight.data.copy_(torch.from_numpy(weights))
-                    # Freeze them!
-                    self.visual_features.weight.requires_grad = False 
-                    print(f"Successfully loaded and frozen 1280-dim image features from {img_path}")
+                    self.visual_features.weight.requires_grad = False
+                    print(f"--> Loaded Visual Embeddings from {img_path}")
                 else:
-                    print(f"Warning: Size Mismatch! File: {weights.shape[0]}, Model: {self.item_num+1}. Skipping images.")
+                    print(f"Size mismatch for visuals.")
             except Exception as e:
                 print(f"Could not load visual features: {e}")
+        else:
+            print("--> Visual features DISABLED by argument.")
 
-
-            # =================================================
-            # FEATURE 2: TAGS (Multi-Hot -> Linear)
-            # =================================================
-            self.tag_features = None # Initialize as None first
+        # 2. TAG FEATURES
+        self.tag_features = None
+        if self.use_tags:
+            if args.dataset and 'group' in args.dataset:
+                tag_filename = 'pretrained_group_tag_emb.npy'
+            else:
+                tag_filename = 'pretrained_tag_emb.npy'
+            tag_path = os.path.join(data_root, tag_filename)
+                
+            self.alpha_tags = torch.nn.Parameter(torch.tensor(0.1).to(self.dev))
             try:
                 tag_matrix = np.load(tag_path)
-                
                 if tag_matrix.shape[0] == self.item_num + 1:
-                    # FIRST: Define the attribute
-                    self.num_unique_tags = tag_matrix.shape[1] 
-                    
-                    # SECOND: Define the Projection Layer using that attribute
+                    self.num_unique_tags = tag_matrix.shape[1]
                     self.tag_reduction = torch.nn.Linear(self.num_unique_tags, args.hidden_units)
-                    
-                    # THIRD: Add the Norm layer we discussed
                     self.tag_norm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
-                    
-                    # FOURTH: Load the weights
-                    self.tag_features = torch.nn.Embedding.from_pretrained(
-                        torch.from_numpy(tag_matrix).float(), 
-                        freeze=True
-                    )
-                    print(f"Successfully loaded {self.num_unique_tags} unique tags from {tag_path}")
+                    self.tag_features = torch.nn.Embedding.from_pretrained(torch.from_numpy(tag_matrix).float(), freeze=True)
+                    print(f"--> Loaded Tag Embeddings from {tag_path}")
                 else:
-                    print(f"Warning: Tag Size Mismatch! File: {tag_matrix.shape[0]}, Model: {self.item_num+1}")
-
+                    print(f"Size mismatch for tags.")
             except Exception as e:
-                print(f"Skipping Tags due to error: {e}")
+                print(f"Skipping Tags: {e}")
+        else:
+            print("--> Tag features DISABLED by argument.")
 
-            # =================================================
+        # --- FIX STARTS HERE: UN-INDENTED THESE LINES ---
+        self.pos_emb = torch.nn.Embedding(args.maxlen+1, args.hidden_units, padding_idx=0)
+        self.emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
 
-            self.pos_emb = torch.nn.Embedding(args.maxlen+1, args.hidden_units, padding_idx=0)
-            self.emb_dropout = torch.nn.Dropout(p=args.dropout_rate)
+        self.attention_layernorms = torch.nn.ModuleList()
+        self.attention_layers = torch.nn.ModuleList()
+        self.forward_layernorms = torch.nn.ModuleList()
+        self.forward_layers = torch.nn.ModuleList()
 
-            self.attention_layernorms = torch.nn.ModuleList() # to be Q for self-attention
-            self.attention_layers = torch.nn.ModuleList()
-            self.forward_layernorms = torch.nn.ModuleList()
-            self.forward_layers = torch.nn.ModuleList()
+        self.last_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
 
-            self.last_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
+        for _ in range(args.num_blocks):
+            new_attn_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
+            self.attention_layernorms.append(new_attn_layernorm)
 
-            for _ in range(args.num_blocks):
-                new_attn_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
-                self.attention_layernorms.append(new_attn_layernorm)
+            new_attn_layer =  torch.nn.MultiheadAttention(args.hidden_units,
+                                                            args.num_heads,
+                                                            args.dropout_rate)
+            self.attention_layers.append(new_attn_layer)
 
-                new_attn_layer =  torch.nn.MultiheadAttention(args.hidden_units,
-                                                                args.num_heads,
-                                                                args.dropout_rate)
-                self.attention_layers.append(new_attn_layer)
+            new_fwd_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
+            self.forward_layernorms.append(new_fwd_layernorm)
 
-                new_fwd_layernorm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
-                self.forward_layernorms.append(new_fwd_layernorm)
+            new_fwd_layer = PointWiseFeedForward(args.hidden_units, args.dropout_rate)
+            self.forward_layers.append(new_fwd_layer)
 
-                new_fwd_layer = PointWiseFeedForward(args.hidden_units, args.dropout_rate)
-                self.forward_layers.append(new_fwd_layer)
-
-    def log2feats(self, log_seqs): # TODO: fp64 and int64 as default in python, trim?
+    def log2feats(self, log_seqs):
         # 1. Base ID
         ids = torch.LongTensor(log_seqs).to(self.dev)
         seqs = self.item_emb(ids)
         seqs *= self.item_emb.embedding_dim ** 0.5
 
-        # --- NEW CODE: VISUAL PROJECTION ---
-        
-        # 2. Get Visual Embeddings (The "Content" part)
-        # Look up the 1280 vectors
-        visuals = self.visual_features(ids)
-        
-        # 3. Project Visuals: 1280 -> 50
-        visuals_projected = self.visual_norm(self.dim_reduction_layer(visuals))
-        # Logic: ID + (α * Visual)
-        seqs = seqs + (self.alpha_visual * visuals_projected)
-        # 4. Combine!
-        # Option A: Addition (Most common) -> Input = ID + Image
-        seqs = seqs + visuals_projected
+        # 2. Apply Visuals (ONLY IF ENABLED)
+        if self.use_visual:
+            visuals = self.visual_features(ids)
+            visuals_projected = self.visual_norm(self.dim_reduction_layer(visuals))
+            seqs = seqs + (self.alpha_visual * visuals_projected)
 
-        # 3. Add Tags (New Code)
-        if self.tag_features is not None:
-            # Get the Multi-Hot vector (Batch x Seq x NumTags)
+        # 3. Apply Tags (ONLY IF ENABLED AND LOADED)
+        if self.use_tags and self.tag_features is not None:
             tag_vectors = self.tag_features(ids)
-            # CHANGE: Replace tanh with LayerNorm
             tag_projected = self.tag_norm(self.tag_reduction(tag_vectors.float()))
-            # Logic: (Current Sum) + (β * Tags)
             seqs = seqs + (self.alpha_tags * tag_projected)
-
-        #finished new code-----------------------------
         
         poss = np.tile(np.arange(1, log_seqs.shape[1] + 1), [log_seqs.shape[0], 1])
         # TODO: directly do tensor = torch.arange(1, xxx, device='cuda') to save extra overheads

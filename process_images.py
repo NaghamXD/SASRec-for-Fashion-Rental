@@ -16,10 +16,12 @@ def process_images_from_folder():
     # The folder containing the 50.3k .npy files
     EMBEDDINGS_DIR = 'data/embeddings/EfficientNet_V2_L_final/' 
     
-    # Change these lines in process_tags.py
-    SPLIT = "data_70_30" # or "data_loo"
+    # Change these lines based on which split you are processing
+    SPLIT = "data_loo" # or "data_loo" "data_70_30"
     MAP_PATH = f'data/{SPLIT}/item_maps.pkl'
-    OUTPUT_PATH = f'data/{SPLIT}/pretrained_tag_emb.npy'
+    
+    # FIX: Changed output name to 'item_emb' so we don't overwrite tags
+    OUTPUT_PATH = f'data/{SPLIT}/pretrained_item_emb_1280.npy'
     # ---------------------------------------------------------
 
     print("--- Step 1: Loading Mappings ---")
@@ -50,31 +52,26 @@ def process_images_from_folder():
     df.columns = [c.strip() for c in df.columns]
     
     # Verify headers exist
-    required_cols = ['outfit.id', 'picture.id', 'displayOrder']
+    required_cols = ['outfit.id', 'picture.id']
     if not all(col in df.columns for col in required_cols):
         print(f"Error: CSV is missing one of these columns: {required_cols}")
         print(f"Found columns: {df.columns}")
         return
 
-    # Sort by outfit and displayOrder so the best image (0) is first
-    df = df.sort_values(by=['outfit.id', 'displayOrder'])
-    
-    # Keep only the FIRST image for each outfit
-    df_best = df.drop_duplicates(subset=['outfit.id'], keep='first')
-    
-    # Create a dictionary for fast lookup: Outfit ID -> Picture ID
-    outfit_to_pic = dict(zip(df_best['outfit.id'], df_best['picture.id']))
-    print(f"Found image mappings for {len(outfit_to_pic)} unique outfits.")
+    # --- CHANGE: Group ALL pictures for each outfit instead of dropping duplicates ---
+    # Create a dictionary: Outfit ID -> List of Picture IDs
+    outfit_to_pics = df.groupby('outfit.id')['picture.id'].apply(list).to_dict()
+    print(f"Found image mappings for {len(outfit_to_pics)} unique outfits.")
 
-    print("\n--- Step 3: detecting Dimension ---")
+    print("\n--- Step 3: Detecting Dimension ---")
     # Check one file to detect if it is 1280 or something else
-    first_pic_id = df_best.iloc[0]['picture.id']
+    first_pic_id = df.iloc[0]['picture.id']
     sample_path = os.path.join(EMBEDDINGS_DIR, f"{first_pic_id}.npy")
     
     if not os.path.exists(sample_path):
         # If first one missing, try to find ANY valid file
         found = False
-        for pid in df_best['picture.id']:
+        for pid in df['picture.id']:
             p = os.path.join(EMBEDDINGS_DIR, f"{pid}.npy")
             if os.path.exists(p):
                 sample_path = p
@@ -92,7 +89,7 @@ def process_images_from_folder():
         print(f"Error loading sample file: {e}")
         return
 
-    print("\n--- Step 4: Building Matrix ---")
+    print("\n--- Step 4: Building Matrix (Averaging Images) ---")
     # Initialize Matrix with Zeros
     # Shape: [num_items + 1, embed_dim] (Index 0 is padding)
     emb_matrix = np.zeros((num_items + 1, embed_dim), dtype=np.float32)
@@ -102,24 +99,31 @@ def process_images_from_folder():
     
     # Iterate through the ITEM MAP (the model's items)
     for item_str, item_int in item_map.items():
-        # 1. Do we have a picture ID for this item?
-        if item_str in outfit_to_pic:
-            pic_id = outfit_to_pic[item_str]
-            file_name = f"{pic_id}.npy"
-            file_path = os.path.join(EMBEDDINGS_DIR, file_name)
+        # 1. Do we have pictures for this item?
+        if item_str in outfit_to_pics:
+            pic_ids = outfit_to_pics[item_str]
             
-            # 2. Does the .npy file exist?
-            if os.path.exists(file_path):
-                try:
-                    emb = np.load(file_path)
-                    if emb.shape[0] == embed_dim:
-                        emb_matrix[item_int] = emb
-                        success_count += 1
-                    else:
-                        # Handle size mismatch if any
+            valid_embeddings = []
+            
+            # 2. Loop through ALL pictures for this item
+            for pic_id in pic_ids:
+                file_name = f"{pic_id}.npy"
+                file_path = os.path.join(EMBEDDINGS_DIR, file_name)
+                
+                if os.path.exists(file_path):
+                    try:
+                        emb = np.load(file_path)
+                        if emb.shape[0] == embed_dim:
+                            valid_embeddings.append(emb)
+                    except:
                         pass
-                except:
-                    pass
+            
+            # 3. Calculate Mean if we found valid images
+            if len(valid_embeddings) > 0:
+                # Average along axis 0 to get a single vector of size 1280
+                mean_vector = np.mean(valid_embeddings, axis=0)
+                emb_matrix[item_int] = mean_vector
+                success_count += 1
             else:
                 missing_count += 1
         else:
@@ -131,24 +135,28 @@ def process_images_from_folder():
             sys.stdout.flush()
 
     print(f"\n\nDone!")
-    print(f"Successfully loaded images: {success_count}")
-    print(f"Missing images (zeros): {missing_count}")
+    print(f"Successfully loaded items (averaged): {success_count}")
+    print(f"Missing items (zeros): {missing_count}")
     
-    # I added also filling missing embeddings with the mean of existing ones
+    # --- Step 5: Fill Missing Values with Global Mean ---
     final_matrix = emb_matrix.copy()
+    
     # Calculate the mean of only the rows we successfully filled (skip index 0 and zeros)
     mask = np.any(final_matrix != 0, axis=1)
-    mean_vec = final_matrix[mask].mean(axis=0)
-
-    # Fill the missing items (where the row is all zeros) with the mean
-    missing_mask = ~mask
-    # Don't fill index 0 (padding)
-    missing_mask[0] = False 
-    final_matrix[missing_mask] = mean_vec
+    
+    if np.sum(mask) > 0:
+        global_mean_vec = final_matrix[mask].mean(axis=0)
+        print("Filling missing items with global mean vector...")
+        
+        # Fill the missing items (where the row is all zeros) with the mean
+        missing_mask = ~mask
+        # Don't fill index 0 (padding) - strictly reserved for padding
+        missing_mask[0] = False 
+        final_matrix[missing_mask] = global_mean_vec
+    else:
+        print("Warning: No images loaded at all. Matrix is empty.")
 
     np.save(OUTPUT_PATH, final_matrix)
-    # Save
-    #np.save(OUTPUT_PATH, emb_matrix)
     print(f"Saved matrix to: {OUTPUT_PATH}")
     print(f"Matrix Shape: {final_matrix.shape}")
 
