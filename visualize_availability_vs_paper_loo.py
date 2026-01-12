@@ -14,7 +14,7 @@ No features,Leave-One-Out (Items),Rolling (Availability Mask),0.0290264577446699
 
 df_user = pd.read_csv(io.StringIO(csv_data))
 # Clean up feature names for the plot
-df_user['Method'] = df_user['Features'].str.replace(' features', '', regex=False).str.title() + ' (Yours)'
+df_user['Method'] = df_user['Features'].str.replace(' features', '', regex=False).str.title() + ' (SASRec)'
 
 # 2. Load Paper Data
 # Creating a DataFrame manually for the paper benchmarks
@@ -42,7 +42,7 @@ df_melted = df_full.melt(
 sns.set_theme(style="whitegrid")
 
 # Define a specific order so the Paper Baseline appears first (as a reference)
-method_order = ['Paper Baseline', 'No (Yours)', 'Tag (Yours)', 'Image (Yours)', 'Both (Yours)']
+method_order = ['Paper Baseline', 'No (SASRec)', 'Tag (SASRec)', 'Image (SASRec)', 'Both (SASRec)']
 
 g = sns.catplot(
     data=df_melted,
@@ -60,7 +60,7 @@ g = sns.catplot(
 )
 
 # 5. Polish the Chart
-g.fig.suptitle('Benchmarking: Your Rolling Evaluation vs Paper Baseline', y=1.02, fontsize=16, fontweight='bold')
+g.fig.suptitle('Benchmarking: SASRec Rolling Evaluation vs Paper Baseline', y=1.02, fontsize=16, fontweight='bold')
 
 for ax in g.axes.flat:
     # Rotate x-axis labels

@@ -17,9 +17,10 @@ data_paper = {
         'Items', 'Groups', 'Items', 'Groups'
     ],
     # Note: I renamed 'Ind' to 'Items' to match your terminology
-    'HR@10': [0.0220, 0.0451, 0.0546, 0.0756, 0.0607, 0.0776, 0.0371, 0.0479, 0.0379, 0.0551, 0.0355, 0.0386, 0.0541, 0.0634],
-    'HR@100': [0.1158, 0.2088, 0.1255, 0.1532, 0.1957, 0.2633, 0.1949, 0.2223, 0.1755, 0.2398, 0.1334, 0.1443, 0.2324, 0.2378],
-    'Source': ['Paper'] * 14
+    'HR@10': [0.010502, 0.008965, 0.015881, 0.021004, 0.021260, 0.022797, 0.011783, 0.017674, 0.009734, 0.017418, 0.024987, 0.025760, 0.024214, 0.027563],
+    'HR@100': [0.046875, 0.064037, 0.034580, 0.046875, 0.075051, 0.098617, 0.084016, 0.083760, 0.060195, 0.089395, 0.073673, 0.077280, 0.100206, 0.100979],
+    'HR@10_new': [0.004627, 0.003342, 0.0000, 0.0000, 0.006427, 0.003599, 0.007455, 0.013882, 0.010026, 0.015424, 0.022751, 0.023268, 0.026629, 0.028180],
+    'HR@100_new': [0.027506, 0.047815, 0.0000, 0.0000, 0.050129, 0.066581, 0.064267, 0.075835, 0.061954, 0.082262, 0.082213, 0.085832, 0.102637, 0.104188],    'Source': ['Paper'] * 14
 
     
 }
@@ -63,17 +64,17 @@ df = pd.read_csv(io.StringIO(csv_data))
 
 # Filter for the two conditions
 # Condition 1: Items (Leave-One-Out, Rolling Availability Mask)
-items_df = df[(df['Experiment_Name'] == '70-30 Split (Items)') & (df['Eval_Mode'] == 'Static (Pure)')]
+items_df = df[(df['Experiment_Name'] == 'Leave-One-Out (Items)') & (df['Eval_Mode'] == 'Rolling (Availability Mask)')]
 
 # Condition 2: Groups (70-30 Split, Static Pure)
-groups_df = df[(df['Experiment_Name'] == '70-30 Split (Groups)') & (df['Eval_Mode'] == 'Static (Pure)')]
+groups_df = df[(df['Experiment_Name'] == 'Leave-One-Out (Groups)') & (df['Eval_Mode'] == 'Static (Pure)')]
 
 # Mapping feature names
 feat_map = {
-    'No features': 'No Features (Yours)',
-    'Tag features': 'Tag Features (Yours)',
-    'Image features': 'Img Features (Yours)',
-    'Both features': 'Both Features (Yours)'
+    'No features': 'No Features (SASRec)',
+    'Tag features': 'Tag Features (SASRec)',
+    'Image features': 'Img Features (SASRec)',
+    'Both features': 'Both Features (SASRec)'
 }
 
 # Construct the data
@@ -81,6 +82,8 @@ method_list = []
 user_type_list = []
 hr10_list = []
 hr100_list = []
+hr10_new_list = []
+hr100_new_list = []
 source_list = []
 
 order = ['No features', 'Tag features', 'Image features', 'Both features']
@@ -93,7 +96,9 @@ for feat in order:
         user_type_list.append('Items')
         hr10_list.append(item_row.iloc[0]['HR@10'])
         hr100_list.append(item_row.iloc[0]['HR@100'])
-        source_list.append('Yours')
+        hr10_new_list.append(item_row.iloc[0]['HR@10_new'])
+        hr100_new_list.append(item_row.iloc[0]['HR@100_new'])
+        source_list.append('SASRec')
     
     # Groups
     group_row = groups_df[groups_df['Features'] == feat]
@@ -102,13 +107,17 @@ for feat in order:
         user_type_list.append('Groups')
         hr10_list.append(group_row.iloc[0]['HR@10'])
         hr100_list.append(group_row.iloc[0]['HR@100'])
-        source_list.append('Yours')
+        hr10_new_list.append(group_row.iloc[0]['HR@10_new'])
+        hr100_new_list.append(group_row.iloc[0]['HR@100_new'])
+        source_list.append('SASRec')
 
 data_mine = {
     'Method': method_list,
     'User Type': user_type_list,
     'HR@10': hr10_list,
     'HR@100': hr100_list,
+    'HR@10_new': hr10_new_list,
+    'HR@100_new': hr100_new_list,
     'Source': source_list
 }
 
@@ -117,7 +126,7 @@ df_mine = pd.DataFrame(data_mine)
 df_full = pd.concat([df_paper, df_mine], ignore_index=True)
 
 # Define a metric to plot (Change to HR@10 if needed)
-metric = 'HR@10'
+metric = 'HR@10_new'
 
 
 #'''
@@ -136,9 +145,9 @@ ax = sns.barplot(
 # Customizing to separate Paper vs Yours visually
 plt.axvline(x=6.5, color='black', linestyle='--', linewidth=1) # Line separating Paper vs Yours
 plt.text(3, df_full[metric].max(), 'Paper Baselines', ha='center', fontsize=12, fontweight='bold')
-plt.text(9, df_full[metric].max(), 'Your Models', ha='center', fontsize=12, fontweight='bold', color='darkblue')
+plt.text(9, df_full[metric].max(), 'SASRec Models', ha='center', fontsize=12, fontweight='bold', color='darkblue')
 
-plt.title(f'Global Comparison: Paper Baselines vs Your Approaches ({metric})', fontsize=16)
+plt.title(f'Global Comparison: Paper Baselines vs SASRec Approaches ({metric})', fontsize=16)
 plt.xticks(rotation=45, ha='right')
 plt.ylabel('Hit Rate')
 plt.legend(title='Target')
