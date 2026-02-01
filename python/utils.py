@@ -96,7 +96,7 @@ class WarpSampler(object):
 
 
 # train/val/test data generation
-def data_partition(fname):
+'''def data_partition(fname):
     usernum = 0
     itemnum = 0
     User = defaultdict(list)
@@ -125,8 +125,56 @@ def data_partition(fname):
             user_valid[user].append(User[user][-2])
             user_test[user] = []
             user_test[user].append(User[user][-1])
-    return [user_train, user_valid, user_test, usernum, itemnum]
+    return [user_train, user_valid, user_test, usernum, itemnum]'''
+# In utils.py
 
+def data_partition(fname):
+    usernum = 0
+    itemnum = 0
+    User = defaultdict(list)
+    user_train = {}
+    user_valid = {}
+    user_test = {}
+    
+    # 1. READ THE FILE
+    # Check if we are loading a specific train file (don't split again)
+    is_explicit_train_file = 'train' in fname 
+    
+    f = open('data/%s.txt' % fname, 'r')
+    for line in f:
+        u, i = line.rstrip().split(' ')
+        u = int(u)
+        i = int(i)
+        usernum = max(u, usernum)
+        itemnum = max(i, itemnum)
+        User[u].append(i)
+    f.close()
+
+    # 2. POPULATE DICTIONARIES
+    for user in User:
+        nfeedback = len(User[user])
+        
+        if is_explicit_train_file:
+            # CASE A: PRE-SPLIT DATA (We trust the file content)
+            # Use ALL data for training. 
+            # We must leave valid/test empty here because they are in separate PKL files now.
+            user_train[user] = User[user]
+            user_valid[user] = [] 
+            user_test[user] = []
+        else:
+            # CASE B: RAW DATA (Perform LOO Split)
+            if nfeedback < 3:
+                user_train[user] = User[user]
+                user_valid[user] = []
+                user_test[user] = []
+            else:
+                user_train[user] = User[user][:-2]
+                user_valid[user] = []
+                user_valid[user].append(User[user][-2])
+                user_test[user] = []
+                user_test[user].append(User[user][-1])
+                
+    return [user_train, user_valid, user_test, usernum, itemnum]
 # TODO: merge evaluate functions for test and val set
 # evaluate on test set
 def evaluate(model, dataset, args):

@@ -3,7 +3,7 @@ import pandas as pd
 import pickle
 import os
 # 1. Define these outside so they are easy to change
-SPLIT = "data_loo" #"data_70_30" or "data_loo"
+SPLIT = "data_70_30" #"data_70_30" or "data_loo"
 # These should be used inside the function!
 ITEM_MAP_PATH = f'data/{SPLIT}/item_maps.pkl'
 GROUP_MAP_PATH = f'data/{SPLIT}/group_maps.pkl'
@@ -11,20 +11,21 @@ ITEM_IMG_PATH = f'data/{SPLIT}/pretrained_item_emb_1280.npy'
 ITEM_TAG_PATH = f'data/{SPLIT}/pretrained_tag_emb.npy'
 
 def process_group_features():
-    print("--- Generaring Group Embeddings ---")
+    print(f"--- Generating Group Embeddings for {SPLIT} ---")
     
     # 1. Load Maps
-    # We need both maps to link Group_ID -> [Item_IDs]
     try:
-        with open('data/item_maps.pkl', 'rb') as f:
+        # FIX: Use the constant variables defined above
+        with open(ITEM_MAP_PATH, 'rb') as f:
             item_maps = pickle.load(f)
-            item_map = item_maps[1] # Item String -> Item Int
+            item_map = item_maps[1] 
             
-        with open('data/group_maps.pkl', 'rb') as f:
+        with open(GROUP_MAP_PATH, 'rb') as f:
             group_maps = pickle.load(f)
-            group_map = group_maps[1] # Group String -> Group Int
+            group_map = group_maps[1] 
+            
     except FileNotFoundError:
-        print("Error: Map files not found.")
+        print(f"Error: Map files not found. Checked: {ITEM_MAP_PATH}")
         return
 
     # 2. Load Outfits to link Items to Groups

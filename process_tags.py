@@ -93,6 +93,6 @@ def process_tags():
     # 6. Save
     np.save(OUTPUT_PATH, tag_matrix.astype(np.float32))
     print(f"Saved to {OUTPUT_PATH}")
-
+    
 if __name__ == "__main__":
     process_tags()

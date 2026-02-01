@@ -17,7 +17,7 @@ def process_images_from_folder():
     EMBEDDINGS_DIR = 'data/embeddings/EfficientNet_V2_L_final/' 
     
     # Change these lines based on which split you are processing
-    SPLIT = "data_loo" # or "data_loo" "data_70_30"
+    SPLIT = "data_70_30" # or "data_loo" "data_70_30"
     MAP_PATH = f'data/{SPLIT}/item_maps.pkl'
     
     # FIX: Changed output name to 'item_emb' so we don't overwrite tags

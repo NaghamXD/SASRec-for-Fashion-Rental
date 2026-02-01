@@ -35,7 +35,10 @@ class SASRec(torch.nn.Module):
         
         # This represents 'd_i' from the paper
         self.delta_emb = torch.nn.Embedding(self.item_num + 1, args.hidden_units, padding_idx=0)
-    
+        # We initialize it to be very small (near zero) so the model starts
+        # by relying almost entirely on the content (Visual/Tags).
+        self.delta_emb.weight.data.normal_(0, 0.001)
+        
         # Paper uses a small delta_max (e.g., 0.1 to 0.2)
         self.delta_max = getattr(args, 'delta_max', 0.1) 
         
@@ -143,15 +146,36 @@ class SASRec(torch.nn.Module):
         return c_i + d_i
 
     def log2feats(self, log_seqs):
-        ids = torch.LongTensor(log_seqs).to(self.dev)
+        # NEW CODE (Fixes the crash)
+        if isinstance(log_seqs, torch.Tensor):
+            # If it's already a Tensor (e.g., from your optimized eval), just move it to correct device
+            ids = log_seqs.to(self.dev)
+        else:
+            # If it's a list/numpy (legacy), convert it safely
+            ids = torch.tensor(log_seqs, dtype=torch.long, device=self.dev)
         # Use our new adjustment logic
         seqs = self.get_item_vector(ids)
         
-        # Standard SASRec scaling and positional encoding
+        # Standard SASRec scaling
         seqs *= self.delta_emb.embedding_dim ** 0.5
-        poss = np.tile(np.arange(1, log_seqs.shape[1] + 1), [log_seqs.shape[0], 1])
-        poss *= (log_seqs != 0)
-        seqs += self.pos_emb(torch.LongTensor(poss).to(self.dev))
+        
+        # --- FIX 1: Create 'poss' safely (Handles both Tensor and Numpy) ---
+        if isinstance(log_seqs, torch.Tensor):
+            poss = torch.ones_like(log_seqs, dtype=torch.float32)
+            poss *= (log_seqs != 0).float()
+        else:
+            poss = np.ones(log_seqs.shape)
+            poss *= (log_seqs != 0)
+
+        # --- FIX 2: Apply Positional Embedding safely (Handles GPU Tensors) ---
+        if isinstance(poss, torch.Tensor):
+            # If poss is already a Tensor (on GPU), cast to Long
+            pos_indices = poss.long().to(self.dev)
+        else:
+            # Fallback for legacy Numpy
+            pos_indices = torch.tensor(poss, dtype=torch.long, device=self.dev)
+
+        seqs += self.pos_emb(pos_indices)
         seqs = self.emb_dropout(seqs)
 
         

@@ -16,6 +16,8 @@ benchmark_results.csv
 
 # --- Generated Data (Output of preprocess.py) ---
 data/
+data_70_30/
+data_loo/
 *.txt
 *.pkl
 *.npy
