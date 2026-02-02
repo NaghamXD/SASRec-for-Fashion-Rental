@@ -63,30 +63,40 @@ class SASRec(torch.nn.Module):
         self.use_visual = args.use_visual
         self.use_tags = args.use_tags
         
-        # 1. VISUAL FEATURES (REMAINING AS FROZEN CONTENT c_i)
+       # 1. VISUAL FEATURES (Updated for CLIP 512-dim)
         if self.use_visual:
-            img_filename = 'pretrained_group_emb_1280.npy' if 'group' in args.dataset else 'pretrained_item_emb_1280.npy'
+            # CHANGED: Point to your new CLIP filename
+            img_filename = 'image_feat.npy' 
             img_path = os.path.join(data_root, img_filename)
-            self.dim_reduction_layer = torch.nn.Linear(1280, args.hidden_units)
-            self.visual_norm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
-            self.visual_features = torch.nn.Embedding(self.item_num+1, 1280, padding_idx=0)
             
-            # Safe loading
+            # CHANGED: Input size is now 512 (CLIP), not 1280 (EfficientNet)
+            self.dim_reduction_layer = torch.nn.Linear(512, args.hidden_units)
+            self.visual_norm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
+            # CHANGED: Embedding layer also needs to be 512
+            self.visual_features = torch.nn.Embedding(self.item_num+1, 512, padding_idx=0)
+            
             if os.path.exists(img_path):
+                print(f"--> [Model] Loading Visual Embeddings from: {img_path}")
                 weights = np.load(img_path)
+                # Safety check for dimensions
+                if weights.shape[1] != 512:
+                    print(f"ERROR: Weights have shape {weights.shape}, but model expects 512. Check your .npy file.")
                 self.visual_features.weight.data.copy_(torch.from_numpy(weights))
             else:
                 print(f"Warning: Visual embeddings not found at {img_path}. Initializing random.")
                 
             self.visual_features.weight.requires_grad = False
 
-        # 2. TAG FEATURES (REMAINING AS FROZEN CONTENT c_i)
+        # 2. TAG FEATURES (Updated for CLIP Text 512-dim)
         if self.use_tags:
-            tag_filename = 'pretrained_group_tag_emb.npy' if 'group' in args.dataset else 'pretrained_tag_emb.npy'
+            # CHANGED: Point to your new CLIP Text filename
+            tag_filename = 'text_feat.npy'
             tag_path = os.path.join(data_root, tag_filename)
             
             if os.path.exists(tag_path):
+                print(f"--> [Model] Loading Tag Embeddings from: {tag_path}")
                 tag_matrix = np.load(tag_path)
+                # CHANGED: Ensure linear layer matches input data size
                 self.tag_reduction = torch.nn.Linear(tag_matrix.shape[1], args.hidden_units)
                 self.tag_norm = torch.nn.LayerNorm(args.hidden_units, eps=1e-8)
                 self.tag_features = torch.nn.Embedding.from_pretrained(torch.from_numpy(tag_matrix).float(), freeze=True)

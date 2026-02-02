@@ -8,15 +8,11 @@ from datetime import datetime
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
-DELTAS = [0.3, 0.5, 0.8]
+DELTAS = [0.1, 0.2, 0.3, 0.5, 0.8]
 
 # Relative paths from the Project Root
 DATASETS = [
-    "data_70_30/clothing_items_train",
-    "data_70_30/clothing_groups_train",
-    "data_loo/clothing_items_train",
-    "data_loo/clothing_groups_train"
-]
+    "data_70_30/clothing_items_train"]
 
 def run_experiments():
     # 1. Determine Paths

@@ -9,7 +9,7 @@ import time
 # 1. Hyperparameters
 HIDDEN_UNITS = 128
 DEVICE = 'mps'         # 'mps' for Mac
-DELTA_MAX = 0.3        # Your optimal delta
+DELTA_MAX = 0.5        # Your optimal delta
 DROPOUT = 0.7          # Best dropout
 LR = 0.001             # Best LR
 EPOCHS = 1000           
@@ -17,9 +17,9 @@ EPOCHS = 1000
 # 2. Datasets
 DATASETS = [
     "data_70_30/clothing_items_train",
-    "data_70_30/clothing_groups_train",
-    "data_loo/clothing_items_train",
-    "data_loo/clothing_groups_train"
+    "data_70_30/clothing_groups_train"#,
+    #"data_loo/clothing_items_train",
+    #"data_loo/clothing_groups_train"
 ]
 
 def run_training():

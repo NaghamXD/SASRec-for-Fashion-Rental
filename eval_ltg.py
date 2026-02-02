@@ -296,36 +296,36 @@ def get_eval_tasks():
     
     # Task 1: 70-30 Items
     tasks.append({
-        'name': f'LG_Delta_0.3_7030_Items',
-        'model_dir': f'both_features_delta_0.3_70_30', # Suffix
+        'name': f'LG_Delta_0.5_7030_Items',
+        'model_dir': f'both_features_delta_0.5_70_30', # Suffix
         'dataset': 'data_70_30/clothing_items_train',
         'v': True, 't': True, 
-        'label': f'Delta=0.3'
+        'label': f'Delta=0.5'
     })
     # Task 2: 70-30 Groups
     tasks.append({
-        'name': f'LG_Delta_0.3_7030_Groups',
-        'model_dir': f'both_features_delta_0.3_70_30',
+        'name': f'LG_Delta_0.5_7030_Groups',
+        'model_dir': f'both_features_delta_0.5_70_30',
         'dataset': 'data_70_30/clothing_groups_train',
         'v': True, 't': True, 
-        'label': f'Delta=0.3'
+        'label': f'Delta=0.5'
     })
-    # Task 3: LOO Items
+    '''    # Task 3: LOO Items
     tasks.append({
-        'name': f'LG_Delta_0.3_LOO_Items',
-        'model_dir': f'both_features_delta_0.3_loo',
+        'name': f'LG_Delta_0.5_LOO_Items',
+        'model_dir': f'both_features_delta_0.5_loo',
         'dataset': 'data_loo/clothing_items_train',
         'v': True, 't': True, 
-        'label': f'Delta=0.3'
+        'label': f'Delta=0.5'
     })
     # Task 4: LOO Groups
     tasks.append({
-        'name': f'LG_Delta_0.3_LOO_Groups',
-        'model_dir': f'both_features_delta_0.3_loo',
+        'name': f'LG_Delta_0.5_LOO_Groups',
+        'model_dir': f'both_features_delta_0.5_loo',
         'dataset': 'data_loo/clothing_groups_train',
         'v': True, 't': True, 
-        'label': f'Delta=0.3'
-    })
+        'label': f'Delta=0.5'
+    })'''
     return tasks
 
 def str2bool(v):
@@ -350,8 +350,8 @@ if __name__ == '__main__':
     parser.add_argument('--num_blocks', default=2, type=int)
     parser.add_argument('--num_epochs', default=1000, type=int)
     parser.add_argument('--num_heads', default=1, type=int)
-    parser.add_argument('--dropout_rate', default=0.5, type=float)
-    parser.add_argument('--l2_emb', default=0.01, type=float)
+    parser.add_argument('--dropout_rate', default=0.7, type=float)
+    parser.add_argument('--l2_emb', default=0.0, type=float)
     parser.add_argument('--device', default='mps', type=str) # Default to mps for Mac
     parser.add_argument('--inference_only', default=False, type=str2bool)
     parser.add_argument('--state_dict_path', default=None, type=str)
@@ -359,11 +359,11 @@ if __name__ == '__main__':
     parser.add_argument('--use_visual', default=True, type=str2bool)
     parser.add_argument('--use_tags', default=True, type=str2bool)
     # Added delta_max arg which is required for LG model
-    parser.add_argument('--delta_max', default=0.3, type=float)
+    parser.add_argument('--delta_max', default=0.5, type=float)
 
     base_args = parser.parse_args()
     
-    output_csv = "evaluation_results_let_it_go_new_metrics.csv"
+    output_csv = "evaluation_results_let_it_go_with_clip.csv"
     print(f"Results will be saved to: {output_csv}\n")
 
     tasks = get_eval_tasks()
