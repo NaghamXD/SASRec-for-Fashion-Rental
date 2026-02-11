@@ -56,34 +56,56 @@ def load_group_mapping(dataset_folder):
     except Exception as e:
         print(f"Warning: Failed to load group map: {e}")
         return {}
-    
+
 class AvailabilityMask:
     def __init__(self, orders_path, triplets_path, item_map, user_map):
         print("Building Availability Index...")
         self.item_map = item_map
         self.user_map = user_map
-        # Assuming files are in current directory or specific path
-        # You might need to adjust paths if they are in 'data/'
+        
         if not os.path.exists(orders_path):
-            print(f"Warning: {orders_path} not found. Availability Mask might fail.")
+            print(f"Warning: {orders_path} not found.")
             self.unavailable = {}
             return
 
+        # 1. Load Data (Let Pandas guess types first)
         df1 = pd.read_csv(orders_path, sep=';')
         df2 = pd.read_csv(triplets_path, sep=';')
+        
         cols = ['customer.id', 'outfit.id', 'rentalPeriod.start', 'rentalPeriod.end']
         full_df = pd.concat([df1[cols], df2[cols]])
+
+        # 2. TYPE CORRECTION (The Fix)
+        # Item Map expects STRINGS
+        full_df['outfit.id'] = full_df['outfit.id'].astype(str)
+        
+        # User Map expects INTEGERS (numpy.int64)
+        # We use pd.to_numeric to handle strings like "05238" -> 5238 automatically
+        full_df['customer.id'] = pd.to_numeric(full_df['customer.id'], errors='coerce')
+        
+        # Drop rows where User ID couldn't become a number (garbage data)
+        full_df = full_df.dropna(subset=['customer.id'])
+        # Convert to standard int for mapping
+        full_df['customer.id'] = full_df['customer.id'].astype('int64')
+
         full_df['start'] = pd.to_datetime(full_df['rentalPeriod.start'])
         full_df['end'] = pd.to_datetime(full_df['rentalPeriod.end'])
         
-        # Filter valid items
+        # 3. Filter & Map
+        # Map Items (Str -> Int)
         full_df = full_df[full_df['outfit.id'].isin(self.item_map)]
         full_df['item_int'] = full_df['outfit.id'].map(self.item_map)
+        
+        # Map Users (Int -> Int)
         full_df = full_df[full_df['customer.id'].isin(self.user_map)]
         full_df['user_int'] = full_df['customer.id'].map(self.user_map)
         
-        self.date_index = {} 
+        # 4. Final Cleanup
         full_df = full_df.dropna(subset=['item_int', 'user_int', 'start', 'end'])
+        
+        print(f"  -> Availability Index built with {len(full_df)} active reservations.")
+        
+        self.date_index = {} 
         for row in full_df.itertuples():
             current = row.start
             while current <= row.end:
@@ -101,7 +123,7 @@ class AvailabilityMask:
                 if current_user_id not in renters:
                     unavailable.append(item_id)
         return unavailable
-
+       
 # --- YOUR EVALUATION LOGIC FUNCTIONS ---
 def evaluate_static_logic(model, test_dict, train_seqs, history_dict, args, item_to_group_map={}):
     """Calculates metrics using fixed sequences (Set Recall)."""
@@ -420,7 +442,7 @@ if __name__ == '__main__':
 
     base_args = parser.parse_args()
     
-    output_csv = "evaluation_results_new_metrics_per_group.csv"
+    output_csv = "evaluation_results_additive.csv"
     print(f"Results will be saved to: {output_csv}\n")
 
     tasks = get_eval_tasks()
@@ -506,7 +528,13 @@ if __name__ == '__main__':
                 data = pickle.load(f)
             test_dict = data['test']
             history_dict = data['history']
-            date_dict = data.get('dates', {}) # Safe get in case missing
+            # Try 'test_dates' first (new format), fallback to 'dates' (old format)
+            date_dict = data.get('test_dates', data.get('dates', {}))
+            
+            # DEBUG CHECK:
+            print(f"  -> Loaded {len(date_dict)} users with date information.")
+            if len(date_dict) == 0:
+                 print("  ⚠️ WARNING: Date dictionary is empty! Masking will be SKIPPED.")
             
             # Load Training Sequences (for filtering)
             train_seqs = {}

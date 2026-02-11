@@ -6,10 +6,10 @@ import io
 
 # 1. Load User Data
 csv_data = """Features,Experiment_Name,Eval_Mode,HR@10,HR@100,HR@10_new,HR@100_new,Timestamp
-Both features,70-30 Split (Items),Static (Pure),0.0868225019265348,0.25404572309273055,0.02468487394957983,0.1722689075630252,2026-01-04 01:12:28
-Image features,70-30 Split (Items),Static (Pure),0.09118931415360904,0.26303621885435396,0.025735294117647058,0.1796218487394958,2026-01-04 01:15:12
-Tag features,70-30 Split (Items),Static (Pure),0.08425378885178525,0.26868738761880295,0.027836134453781514,0.19170168067226892,2026-01-04 01:17:55
-No features,70-30 Split (Items),Static (Pure),0.07629077832006165,0.2504495247880812,0.020483193277310924,0.17358193277310924,2026-01-04 01:20:32
+Both features,70-30 Split (Items),Static (Pure),0.08806404657933042,0.27729257641921395,0.03167587476979742,0.20589318600368325,2026-02-10 17:51:05
+Image features,70-30 Split (Items),Static (Pure),0.09024745269286755,0.29002911208151383,0.026519337016574586,0.2151012891344383,2026-02-10 17:53:34
+Tag features,70-30 Split (Items),Static (Pure),0.10007278020378457,0.2929403202328967,0.02725598526703499,0.19705340699815838,2026-02-10 17:55:57
+No features,70-30 Split (Items),Static (Pure),0.11754002911208151,0.30458515283842796,0.022099447513812154,0.19410681399631677,2026-02-10 17:58:17
 """
 
 df_user = pd.read_csv(io.StringIO(csv_data))
@@ -21,7 +21,7 @@ df_user['Method'] = df_user['Features'].str.replace(' features', '', regex=False
 paper_data = {
     'HR@10': 0.0607,
     'HR@100': 0.1957,
-    'HR@10_new': 0.0625,
+    'HR@10_new': 0.0447,
     'HR@100_new': 0.2193
 }
 # Convert to same format as user data
@@ -60,7 +60,13 @@ g = sns.catplot(
 )
 
 # 5. Polish the Chart
-g.fig.suptitle('Benchmarking: SASRec Static Evaluation vs Paper Baseline - items', y=1.02, fontsize=16, fontweight='bold')
+g.fig.suptitle(
+    'Benchmarking: SASRec Static Evaluation vs Paper Baseline - Items',
+    fontsize=16,
+    fontweight='bold'
+)
+
+g.fig.subplots_adjust(top=0.90)
 
 for ax in g.axes.flat:
     # Rotate x-axis labels
@@ -73,4 +79,5 @@ for ax in g.axes.flat:
         ax.bar_label(container, fmt='%.3f', padding=3, fontsize=9)
 
 plt.tight_layout()
+plt.savefig('static_items_vs_paper.png')
 plt.show()

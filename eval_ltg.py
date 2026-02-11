@@ -62,7 +62,7 @@ def load_group_mapping(dataset_folder):
         print(f"Warning: Failed to load group map: {e}")
         return {}
     
-class AvailabilityMask:
+"""class AvailabilityMask:
     def __init__(self, orders_path, triplets_path, item_map, user_map):
         print("Building Availability Index...")
         self.item_map = item_map
@@ -105,7 +105,74 @@ class AvailabilityMask:
                 if current_user_id not in renters:
                     unavailable.append(item_id)
         return unavailable
+"""
+class AvailabilityMask:
+    def __init__(self, orders_path, triplets_path, item_map, user_map):
+        print("Building Availability Index...")
+        self.item_map = item_map
+        self.user_map = user_map
+        
+        if not os.path.exists(orders_path):
+            print(f"Warning: {orders_path} not found.")
+            self.unavailable = {}
+            return
 
+        # 1. Load Data (Let Pandas guess types first)
+        df1 = pd.read_csv(orders_path, sep=';')
+        df2 = pd.read_csv(triplets_path, sep=';')
+        
+        cols = ['customer.id', 'outfit.id', 'rentalPeriod.start', 'rentalPeriod.end']
+        full_df = pd.concat([df1[cols], df2[cols]])
+
+        # 2. TYPE CORRECTION (The Fix)
+        # Item Map expects STRINGS
+        full_df['outfit.id'] = full_df['outfit.id'].astype(str)
+        
+        # User Map expects INTEGERS (numpy.int64)
+        # We use pd.to_numeric to handle strings like "05238" -> 5238 automatically
+        full_df['customer.id'] = pd.to_numeric(full_df['customer.id'], errors='coerce')
+        
+        # Drop rows where User ID couldn't become a number (garbage data)
+        full_df = full_df.dropna(subset=['customer.id'])
+        # Convert to standard int for mapping
+        full_df['customer.id'] = full_df['customer.id'].astype('int64')
+
+        full_df['start'] = pd.to_datetime(full_df['rentalPeriod.start'])
+        full_df['end'] = pd.to_datetime(full_df['rentalPeriod.end'])
+        
+        # 3. Filter & Map
+        # Map Items (Str -> Int)
+        full_df = full_df[full_df['outfit.id'].isin(self.item_map)]
+        full_df['item_int'] = full_df['outfit.id'].map(self.item_map)
+        
+        # Map Users (Int -> Int)
+        full_df = full_df[full_df['customer.id'].isin(self.user_map)]
+        full_df['user_int'] = full_df['customer.id'].map(self.user_map)
+        
+        # 4. Final Cleanup
+        full_df = full_df.dropna(subset=['item_int', 'user_int', 'start', 'end'])
+        
+        print(f"  -> Availability Index built with {len(full_df)} active reservations.")
+        
+        self.date_index = {} 
+        for row in full_df.itertuples():
+            current = row.start
+            while current <= row.end:
+                date_key = current.date() 
+                if date_key not in self.date_index: self.date_index[date_key] = {}
+                if int(row.item_int) not in self.date_index[date_key]: self.date_index[date_key][int(row.item_int)] = set()
+                self.date_index[date_key][int(row.item_int)].add(int(row.user_int))
+                current += pd.Timedelta(days=1)
+
+    def get_unavailable_items(self, query_date, current_user_id):
+        date_key = query_date.date()
+        unavailable = []
+        if date_key in self.date_index:
+            for item_id, renters in self.date_index[date_key].items():
+                if current_user_id not in renters:
+                    unavailable.append(item_id)
+        return unavailable
+    
 # --- YOUR EVALUATION LOGIC FUNCTIONS ---
 def evaluate_static_logic(model, test_dict, train_seqs, history_dict, args, item_to_group_map={}):
     """Calculates metrics using fixed sequences (Set Recall)."""
@@ -296,35 +363,35 @@ def get_eval_tasks():
     
     # Task 1: 70-30 Items
     tasks.append({
-        'name': f'LG_Delta_0.5_7030_Items',
-        'model_dir': f'both_features_delta_0.5_70_30', # Suffix
+        'name': f'LG_Delta_0.2_7030_Items',
+        'model_dir': f'both_features_delta_0.2_70_30', # Suffix
         'dataset': 'data_70_30/clothing_items_train',
         'v': True, 't': True, 
-        'label': f'Delta=0.5'
+        'label': f'Delta=0.2'
     })
     # Task 2: 70-30 Groups
     tasks.append({
-        'name': f'LG_Delta_0.5_7030_Groups',
-        'model_dir': f'both_features_delta_0.5_70_30',
+        'name': f'LG_Delta_0.2_7030_Groups',
+        'model_dir': f'both_features_delta_0.2_70_30',
         'dataset': 'data_70_30/clothing_groups_train',
         'v': True, 't': True, 
-        'label': f'Delta=0.5'
+        'label': f'Delta=0.2'
     })
     '''    # Task 3: LOO Items
     tasks.append({
-        'name': f'LG_Delta_0.5_LOO_Items',
-        'model_dir': f'both_features_delta_0.5_loo',
+        'name': f'LG_Delta_0.2_LOO_Items',
+        'model_dir': f'both_features_delta_0.2_loo',
         'dataset': 'data_loo/clothing_items_train',
         'v': True, 't': True, 
-        'label': f'Delta=0.5'
+        'label': f'Delta=0.2'
     })
     # Task 4: LOO Groups
     tasks.append({
-        'name': f'LG_Delta_0.5_LOO_Groups',
-        'model_dir': f'both_features_delta_0.5_loo',
+        'name': f'LG_Delta_0.2_LOO_Groups',
+        'model_dir': f'both_features_delta_0.2_loo',
         'dataset': 'data_loo/clothing_groups_train',
         'v': True, 't': True, 
-        'label': f'Delta=0.5'
+        'label': f'Delta=0.2'
     })'''
     return tasks
 
@@ -359,7 +426,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_visual', default=True, type=str2bool)
     parser.add_argument('--use_tags', default=True, type=str2bool)
     # Added delta_max arg which is required for LG model
-    parser.add_argument('--delta_max', default=0.5, type=float)
+    parser.add_argument('--delta_max', default=0.2, type=float)
 
     base_args = parser.parse_args()
     
@@ -439,7 +506,13 @@ if __name__ == '__main__':
                 data = pickle.load(f)
             test_dict = data['test']
             history_dict = data['history']
-            date_dict = data.get('dates', {}) 
+            # Try 'test_dates' first (new format), fallback to 'dates' (old format)
+            date_dict = data.get('test_dates', data.get('dates', {}))
+            
+            # DEBUG CHECK:
+            print(f"  -> Loaded {len(date_dict)} users with date information.")
+            if len(date_dict) == 0:
+                 print("  ⚠️ WARNING: Date dictionary is empty! Masking will be SKIPPED.") 
             
             # Load Training Sequences
             train_seqs = {}

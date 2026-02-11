@@ -6,10 +6,10 @@ import io
 
 # 1. Load User Data
 csv_data = """Features,Experiment_Name,Eval_Mode,HR@10,HR@100,HR@10_new,HR@100_new,Timestamp
-Both features,Leave-One-Out (Items),Rolling (Availability Mask),0.03390701258669407,0.11816080143847932,0.013562136728480487,0.08137282037088292,2026-01-04 01:12:53
-Image features,Leave-One-Out (Items),Rolling (Availability Mask),0.026714615977395325,0.12175699974312869,0.011624688624411846,0.0916136174923886,2026-01-04 01:15:37
-Tag features,Leave-One-Out (Items),Rolling (Availability Mask),0.03056768558951965,0.12715129720010274,0.013838915029061722,0.09189039579296983,2026-01-04 01:18:20
-No features,Leave-One-Out (Items),Rolling (Availability Mask),0.02902645774466992,0.11071153352170562,0.011347910323830611,0.08247993357320786,2026-01-04 01:20:55
+Both features,70-30 Split (Groups),Static (Pure),0.11572052401746726,0.3373362445414847,0.05009208103130755,0.27771639042357277,2026-02-10 17:51:39
+Image features,70-30 Split (Groups),Static (Pure),0.10844250363901019,0.33770014556040756,0.03941068139963168,0.26850828729281767,2026-02-10 17:54:06
+Tag features,70-30 Split (Groups),Static (Pure),0.10589519650655022,0.35662299854439594,0.04604051565377532,0.2869244935543278,2026-02-10 17:56:30
+No features,70-30 Split (Groups),Static (Pure),0.11280931586608442,0.33879184861717615,0.04014732965009208,0.26519337016574585,2026-02-10 17:58:46
 """
 
 df_user = pd.read_csv(io.StringIO(csv_data))
@@ -19,10 +19,10 @@ df_user['Method'] = df_user['Features'].str.replace(' features', '', regex=False
 # 2. Load Paper Data
 # Creating a DataFrame manually for the paper benchmarks
 paper_data = {
-    'HR@10': 0.024214,
-    'HR@100': 0.100206,
-    'HR@10_new': 0.026629,
-    'HR@100_new': 0.102637
+    'HR@10': 0.0776,
+    'HR@100': 0.2633,
+    'HR@10_new': 0.0625,
+    'HR@100_new': 0.2429
 }
 # Convert to same format as user data
 df_paper = pd.DataFrame([paper_data])
@@ -60,7 +60,13 @@ g = sns.catplot(
 )
 
 # 5. Polish the Chart
-g.fig.suptitle('Benchmarking: SASRec Rolling Evaluation vs Paper Baseline', y=1.02, fontsize=16, fontweight='bold')
+g.fig.suptitle(
+    'Benchmarking: SASRec Static Evaluation vs Paper Baseline - Groups',
+    fontsize=16,
+    fontweight='bold'
+)
+
+g.fig.subplots_adjust(top=0.90)
 
 for ax in g.axes.flat:
     # Rotate x-axis labels
@@ -73,4 +79,5 @@ for ax in g.axes.flat:
         ax.bar_label(container, fmt='%.3f', padding=3, fontsize=9)
 
 plt.tight_layout()
+plt.savefig('static_group_vs_paper.png')
 plt.show()
